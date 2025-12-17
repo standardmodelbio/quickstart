@@ -117,7 +117,7 @@ if [ -d "standard_model" ]; then
         SKIP_ENV_CREATION=true
         
         # Check if key packages are installed in standard_model
-        if standard_model/bin/python -c "import torch, transformers, datasets, accelerate" 2>/dev/null; then
+        if standard_model/bin/python -c "import torch, transformers, datasets, accelerate, smb_biopan_utils" 2>/dev/null; then
             print_success "All dependencies already installed in 'standard_model'!"
             echo ""
             print_success "Setup complete! Activate with: source standard_model/bin/activate"
@@ -187,6 +187,9 @@ show_spinner $! "Installing HuggingFace datasets..."
 ( uv pip install --python standard_model accelerate > /dev/null 2>&1 ) &
 show_spinner $! "Installing HuggingFace accelerate..."
 
+( uv pip install --python standard_model git+https://github.com/standardmodelbio/smb-biopan-utils.git > /dev/null 2>&1 ) &
+show_spinner $! "Installing smb-biopan-utils..."
+
 # Verify installations
 echo ""
 print_status "Verifying installations..."
@@ -241,6 +244,6 @@ print_status "Downloading $MODEL_NAME..."
 show_spinner $! "Downloading $MODEL_NAME..."
 
 print_success "Model downloaded successfully to ./$MODEL_NAME"
-
+source standard_model/bin/activate
 echo ""
 print_success "Setup complete! Environment \033[1m${CYAN}standard_model/${NC}\033[0m activated"
