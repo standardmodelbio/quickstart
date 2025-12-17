@@ -74,15 +74,17 @@ HAS_TORCH=false
 HAS_TRANSFORMERS=false
 HAS_DATASETS=false
 HAS_ACCELERATE=false
+HAS_SMB_UTILS=false
 
 python3 -c "import torch" 2>/dev/null && HAS_TORCH=true
 python3 -c "import transformers" 2>/dev/null && HAS_TRANSFORMERS=true
 python3 -c "import datasets" 2>/dev/null && HAS_DATASETS=true
 python3 -c "import accelerate" 2>/dev/null && HAS_ACCELERATE=true
+python3 -c "import smb_biopan_utils" 2>/dev/null && HAS_ACCELERATE=true
 
 print_success "Environment check complete"
 
-if $HAS_TORCH && $HAS_TRANSFORMERS && $HAS_DATASETS && $HAS_ACCELERATE; then
+if $HAS_TORCH && $HAS_TRANSFORMERS && $HAS_DATASETS && $HAS_ACCELERATE && $HAS_SMB_UTILS; then
     print_success "All dependencies found in current environment."
     echo ""
     echo -n -e "Do you still want to create a new 'standard_model' environment \033[1m[RECOMMENDED]\033[0m? (y/N): "
@@ -99,6 +101,7 @@ else
     $HAS_TRANSFORMERS || echo -e "  ${RED}✗${NC} transformers"
     $HAS_DATASETS || echo -e "  ${RED}✗${NC} datasets"
     $HAS_ACCELERATE || echo -e "  ${RED}✗${NC} accelerate"
+    $HAS_SMB_UTILS || echo -e "  ${RED}✗${NC} smb_biopan_utils"
     echo ""
 fi
 
