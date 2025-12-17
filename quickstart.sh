@@ -240,10 +240,10 @@ fi
 print_success "Model is accessible"
 
 print_status "Downloading $MODEL_NAME..."
-( standard_model/bin/python -c "from huggingface_hub import snapshot_download; snapshot_download('$MODEL', local_dir='./$MODEL_NAME')" > /dev/null 2>&1 ) &
+( standard_model/bin/python -c "from huggingface_hub import snapshot_download; snapshot_download('$MODEL')" > /dev/null 2>&1 ) &
 show_spinner $! "Downloading $MODEL_NAME..."
+print_success "Model downloaded to HuggingFace cache (~/.cache/huggingface/)"
 
-print_success "Model downloaded successfully to ./$MODEL_NAME"
 source standard_model/bin/activate
 echo ""
 print_success "Setup complete! Environment \033[1m${CYAN}standard_model/${NC}\033[0m activated"
