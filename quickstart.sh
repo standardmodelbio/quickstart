@@ -248,5 +248,4 @@ show_spinner $! "Downloading $MODEL_NAME..."
 print_success "Model downloaded to HuggingFace cache (~/.cache/huggingface/)"
 
 source standard_model/bin/activate
-echo ""
 print_success "Setup complete! Environment \033[1m${CYAN}standard_model/${NC}\033[0m activated"
