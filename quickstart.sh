@@ -181,7 +181,8 @@ else
 fi
 
 # Install HuggingFace with compatible versions
-( uv pip install --python standard_model transformers > /dev/null 2>&1 ) &
+# Pin transformers to 4.46.3 to avoid tie_weights incompatibility with custom models
+( uv pip install --python standard_model transformers==4.46.3 > /dev/null 2>&1 ) &
 show_spinner $! "Installing HuggingFace transformers..."
 
 ( uv pip install --python standard_model datasets > /dev/null 2>&1 ) &
@@ -192,6 +193,10 @@ show_spinner $! "Installing HuggingFace accelerate..."
 
 ( uv pip install --python standard_model git+https://github.com/standardmodelbio/smb-biopan-utils.git > /dev/null 2>&1 ) &
 show_spinner $! "Installing smb-biopan-utils..."
+
+( uv pip install --python standard_model lifelines > /dev/null 2>&1 ) &
+show_spinner $! "Installing lifelines (survival analysis)..."
+
 uv pip install --python standard_model python-dotenv > /dev/null 2>&1
 
 # Verify installations
