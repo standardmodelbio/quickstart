@@ -248,6 +248,9 @@ print_status "Downloading $MODEL_NAME..."
 show_spinner $! "Downloading $MODEL_NAME..."
 print_success "Model downloaded to HuggingFace cache (~/.cache/huggingface/)"
 
-source standard_model/bin/activate
-export TRANSFORMERS_VERBOSITY=warning
-print_success "Setup complete! Environment \033[1m${CYAN}standard_model/${NC}\033[0m activated"
+echo ""
+print_success "Setup complete!"
+echo ""
+echo -e "To get started, activate your environment:"
+echo -e "  ${CYAN}source standard_model/bin/activate${NC}"
+echo ""
