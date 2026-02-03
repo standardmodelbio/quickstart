@@ -180,7 +180,7 @@ else
     show_spinner $! "Installing PyTorch (CPU)..."
 fi
 
-# Install HuggingFace with compatible versions
+# Install HuggingFace libraries
 ( uv pip install --python standard_model transformers > /dev/null 2>&1 ) &
 show_spinner $! "Installing HuggingFace transformers..."
 
@@ -192,6 +192,10 @@ show_spinner $! "Installing HuggingFace accelerate..."
 
 ( uv pip install --python standard_model git+https://github.com/standardmodelbio/smb-biopan-utils.git > /dev/null 2>&1 ) &
 show_spinner $! "Installing smb-biopan-utils..."
+
+( uv pip install --python standard_model lifelines > /dev/null 2>&1 ) &
+show_spinner $! "Installing lifelines (survival analysis)..."
+
 uv pip install --python standard_model python-dotenv > /dev/null 2>&1
 
 # Verify installations
@@ -248,6 +252,9 @@ print_status "Downloading $MODEL_NAME..."
 show_spinner $! "Downloading $MODEL_NAME..."
 print_success "Model downloaded to HuggingFace cache (~/.cache/huggingface/)"
 
-source standard_model/bin/activate
-export TRANSFORMERS_VERBOSITY=warning
-print_success "Setup complete! Environment \033[1m${CYAN}standard_model/${NC}\033[0m activated"
+echo ""
+print_success "Setup complete!"
+echo ""
+echo -e "To get started, activate your environment:"
+echo -e "  ${CYAN}source standard_model/bin/activate${NC}"
+echo ""
