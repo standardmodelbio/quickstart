@@ -180,9 +180,8 @@ else
     show_spinner $! "Installing PyTorch (CPU)..."
 fi
 
-# Install HuggingFace with compatible versions
-# Pin transformers to 4.46.3 to avoid tie_weights incompatibility with custom models
-( uv pip install --python standard_model transformers==4.46.3 > /dev/null 2>&1 ) &
+# Install HuggingFace libraries
+( uv pip install --python standard_model transformers > /dev/null 2>&1 ) &
 show_spinner $! "Installing HuggingFace transformers..."
 
 ( uv pip install --python standard_model datasets > /dev/null 2>&1 ) &
