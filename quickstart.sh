@@ -62,7 +62,7 @@ show_spinner() {
 
 echo ""
 echo "This quickstart will:"
-echo "  • Create a Python 3.10 virtual environment named 'standard_model'"
+echo "  • Create a Python 3.11 virtual environment named 'standard_model'"
 echo "  • Install PyTorch with CUDA support"
 echo "  • Install HuggingFace libraries (transformers, datasets, accelerate)"
 echo -e "  ${GREEN}•${NC} \033[1mInstall the Standard Model huggingface family to local\033[0m"
@@ -80,7 +80,7 @@ python3 -c "import torch" 2>/dev/null && HAS_TORCH=true
 python3 -c "import transformers" 2>/dev/null && HAS_TRANSFORMERS=true
 python3 -c "import datasets" 2>/dev/null && HAS_DATASETS=true
 python3 -c "import accelerate" 2>/dev/null && HAS_ACCELERATE=true
-python3 -c "import smb_biopan_utils" 2>/dev/null && HAS_ACCELERATE=true
+python3 -c "import smb_utils" 2>/dev/null && HAS_SMB_UTILS=true
 
 print_success "Environment check complete"
 
@@ -101,7 +101,7 @@ else
     $HAS_TRANSFORMERS || echo -e "  ${RED}✗${NC} transformers"
     $HAS_DATASETS || echo -e "  ${RED}✗${NC} datasets"
     $HAS_ACCELERATE || echo -e "  ${RED}✗${NC} accelerate"
-    $HAS_SMB_UTILS || echo -e "  ${RED}✗${NC} smb_biopan_utils"
+    $HAS_SMB_UTILS || echo -e "  ${RED}✗${NC} smb_utils"
     echo ""
 fi
 
@@ -120,7 +120,7 @@ if [ -d "standard_model" ]; then
         SKIP_ENV_CREATION=true
         
         # Check if key packages are installed in standard_model
-        if standard_model/bin/python -c "import torch, transformers, datasets, accelerate, smb_biopan_utils" 2>/dev/null; then
+        if standard_model/bin/python -c "import torch, transformers, datasets, accelerate, smb_utils" 2>/dev/null; then
             print_success "All dependencies already installed in 'standard_model'!"
             echo ""
             print_success "Setup complete! Activate with: source standard_model/bin/activate"
@@ -145,8 +145,8 @@ if [ "$SKIP_ENV_CREATION" = false ]; then
     ( pip install uv > /dev/null 2>&1 ) &
     show_spinner $! "Installing uv package manager..."
 
-    print_status "Creating virtual environment 'standard_model' (Python 3.10)..."
-    uv venv standard_model --python 3.10
+    print_status "Creating virtual environment 'standard_model' (Python 3.11)..."
+    uv venv standard_model --python 3.11
 else
     print_status "Skipping environment creation, using existing 'standard_model'"
 fi
@@ -190,8 +190,8 @@ show_spinner $! "Installing HuggingFace datasets..."
 ( uv pip install --python standard_model accelerate > /dev/null 2>&1 ) &
 show_spinner $! "Installing HuggingFace accelerate..."
 
-( uv pip install --python standard_model git+https://github.com/standardmodelbio/smb-biopan-utils.git > /dev/null 2>&1 ) &
-show_spinner $! "Installing smb-biopan-utils..."
+( uv pip install --python standard_model git+https://github.com/standardmodelbio/smb-utils.git > /dev/null 2>&1 ) &
+show_spinner $! "Installing smb_utils..."
 
 ( uv pip install --python standard_model lifelines > /dev/null 2>&1 ) &
 show_spinner $! "Installing lifelines (survival analysis)..."
@@ -216,7 +216,7 @@ echo ""
 show_spinner $! "Installing huggingface_hub..."
 
 # Download the model
-MODEL="standardmodelbio/SMB-v1-1.7B-Structure"
+MODEL="standardmodelbio/SMB-v1-1.7B"
 MODEL_NAME=$(basename "$MODEL")
 
 print_status "Checking model accessibility..."
@@ -255,6 +255,7 @@ print_success "Model downloaded to HuggingFace cache (~/.cache/huggingface/)"
 echo ""
 print_success "Setup complete!"
 echo ""
-echo -e "To get started, activate your environment:"
+echo -e "To get started, activate your environment and run the demo:"
 echo -e "  ${CYAN}source standard_model/bin/activate${NC}"
+echo -e "  ${CYAN}python demo.py${NC}"
 echo ""

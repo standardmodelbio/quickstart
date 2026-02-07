@@ -9,8 +9,12 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import accuracy_score, mean_absolute_error, roc_auc_score
 from sklearn.model_selection import train_test_split
-from smb_biopan_utils import process_ehr_info
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+try:
+    from smb_utils import process_ehr_info
+except ImportError:
+    process_ehr_info = None  # install with: uv pip install "git+https://github.com/standardmodelbio/smb-utils"
 
 # ==========================================
 # CHAPTER 1: Setup & Configuration
@@ -198,6 +202,11 @@ def extract_embeddings(df, model, tokenizer):
             print(f"   -> Processed {i + 1}/{n_pids} patients...")
 
         # A. Serialize (DataFrame -> String)
+        if process_ehr_info is None:
+            raise ImportError(
+                "smb_utils is required for extract_embeddings. "
+                'Install with: uv pip install "git+https://github.com/standardmodelbio/smb-utils"'
+            )
         input_text = process_ehr_info(df=df, subject_id=pid, end_time=end_time)
 
         # B. Tokenize (String -> Tensor)
