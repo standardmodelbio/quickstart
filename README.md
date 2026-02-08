@@ -1,33 +1,39 @@
 # Standard Model Quickstart
 
-Set up your environment, download SMB-v1-1.7B, extract patient embeddings from dummy data, and train classifiers.
+Set up your environment, download SMB-v1-1.7B, extract patient embeddings from synthetic data, and train classifiers.
 
-## Setup
+Requires **Python 3.11+**.
 
-From the repo root, run:
-
-```bash
-./quickstart/quickstart.sh
-```
-
-Then activate and run the demo:
+## One-liner setup
 
 ```bash
-source standard_model/bin/activate
-cd quickstart && python demo.py
+bash -c "$(curl -fsSL https://docs.standardmodel.bio/quickstart.sh)"
 ```
 
-Alternatively, with [uv](https://docs.astral.sh/uv/):
+This clones the repo, installs all locked dependencies via `uv sync`, and gets you ready to run.
+
+## Manual setup
+
+```bash
+git clone https://github.com/standardmodelbio/quickstart.git
+cd quickstart
+uv sync
+```
+
+## Run the demo
 
 ```bash
 cd quickstart
-uv sync --extra dev
-uv pip install "git+https://github.com/standardmodelbio/smb-utils.git"
-python demo.py
+uv run python demo.py
 ```
 
 ## Tests
 
 ```bash
-cd quickstart && uv run pytest tests/ -v
+uv run pytest tests/ -v
 ```
+
+## Learn more
+
+- [Synthetic data example](https://docs.standardmodel.bio/example)
+- [Use your own data](https://docs.standardmodel.bio/your-own-data)
