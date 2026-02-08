@@ -1,6 +1,7 @@
 #!/bin/bash
 set +m
-cat <<'EOF'                                          
+
+cat <<'EOF'
 
              █▀╫╫█⌐
           ,▄Φ█▓╫╫█─▄µ
@@ -17,245 +18,132 @@ cat <<'EOF'
                └`
 EOF
 
-# Colors and symbols for output
+# ── Colors ──────────────────────────────────────────────────────────
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 CYAN='\033[0;36m'
+BOLD='\033[1m'
 
-# Function to print status messages
-print_status() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
+print_status()  { echo -e "${BLUE}[INFO]${NC} $1"; }
+print_success() { echo -e "${GREEN}[✓]${NC} $1"; }
+print_warning() { echo -e "${YELLOW}[⚠]${NC} $1"; }
+print_error()   { echo -e "${RED}[✗]${NC} $1"; }
 
-print_success() {
-    echo -e "${GREEN}[✓]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[⚠]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[✗]${NC} $1"
-}
-
-# Dots spinner function (UV-style)
 show_spinner() {
     local pid=$1
     local message=$2
     local spin='⣾⣽⣻⢿⡿⣟⣯⣷'
     local i=0
     local spinlen=8
-    
-    while kill -0 $pid 2>/dev/null; do
-        i=$(( (i+1) % $spinlen ))
-        printf "\r${BLUE}[${spin:$i:1}]${NC} $message"
+    while kill -0 "$pid" 2>/dev/null; do
+        i=$(( (i+1) % spinlen ))
+        printf "\r${BLUE}[${spin:$i:1}]${NC} %s" "$message"
         sleep 0.08
     done
-    wait $pid 2>/dev/null  # Wait silently
-    printf "\r${GREEN}[✓]${NC} $message\n"
+    wait "$pid" 2>/dev/null
+    printf "\r${GREEN}[✓]${NC} %s\n" "$message"
 }
 
+REPO_URL="https://github.com/standardmodelbio/quickstart.git"
+REPO_DIR="quickstart"
 
+# ── Overview ────────────────────────────────────────────────────────
 echo ""
-echo "This quickstart will:"
-echo "  • Create a Python 3.11 virtual environment named 'standard_model'"
-echo "  • Install PyTorch with CUDA support"
-echo "  • Install HuggingFace libraries (transformers, datasets, accelerate)"
-echo -e "  ${GREEN}•${NC} \033[1mInstall the Standard Model huggingface family to local\033[0m"
+echo -e "${BOLD}Lightspeed Quickstart${NC}"
+echo ""
+echo "This will:"
+echo "  • Clone the Standard Model quickstart repo"
+echo "  • Install all dependencies via uv (locked & reproducible)"
+echo "  • Get you ready to run the demo or use your own data"
 echo ""
 
-# Check if user already has dependencies in their current environment
-print_status "Checking current environment for existing dependencies..."
-HAS_TORCH=false
-HAS_TRANSFORMERS=false
-HAS_DATASETS=false
-HAS_ACCELERATE=false
-HAS_SMB_UTILS=false
+# ── Prerequisites ───────────────────────────────────────────────────
+print_status "Checking prerequisites..."
 
-python3 -c "import torch" 2>/dev/null && HAS_TORCH=true
-python3 -c "import transformers" 2>/dev/null && HAS_TRANSFORMERS=true
-python3 -c "import datasets" 2>/dev/null && HAS_DATASETS=true
-python3 -c "import accelerate" 2>/dev/null && HAS_ACCELERATE=true
-python3 -c "import smb_utils" 2>/dev/null && HAS_SMB_UTILS=true
+if ! command -v git &>/dev/null; then
+    print_error "git is required but not installed."
+    echo -e "  Install it: ${CYAN}https://git-scm.com/downloads${NC}"
+    exit 1
+fi
+print_success "git found"
 
-print_success "Environment check complete"
+# Install uv if not present
+if ! command -v uv &>/dev/null; then
+    print_status "Installing uv package manager..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
+    export PATH="$HOME/.local/bin:$PATH"
+    if ! command -v uv &>/dev/null; then
+        print_error "Failed to install uv. Install manually: https://docs.astral.sh/uv/"
+        exit 1
+    fi
+fi
+print_success "uv found"
 
-if $HAS_TORCH && $HAS_TRANSFORMERS && $HAS_DATASETS && $HAS_ACCELERATE && $HAS_SMB_UTILS; then
-    print_success "All dependencies found in current environment."
-    echo ""
-    echo -n -e "Do you still want to create a new 'standard_model' environment \033[1m[RECOMMENDED]\033[0m? (y/N): "
+# ── Clone ───────────────────────────────────────────────────────────
+echo ""
+if [ -d "$REPO_DIR" ]; then
+    print_warning "'$REPO_DIR' directory already exists."
+    echo -n -e "  Overwrite and re-clone? (y/N): "
     read -n 1 -r
     echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        print_success "Setup skipped. Using current environment."
-        exit 0
-    fi
-else
-    echo ""
-    print_status "Missing dependencies in current environment:"
-    $HAS_TORCH || echo -e "  ${RED}✗${NC} torch"
-    $HAS_TRANSFORMERS || echo -e "  ${RED}✗${NC} transformers"
-    $HAS_DATASETS || echo -e "  ${RED}✗${NC} datasets"
-    $HAS_ACCELERATE || echo -e "  ${RED}✗${NC} accelerate"
-    $HAS_SMB_UTILS || echo -e "  ${RED}✗${NC} smb_utils"
-    echo ""
-fi
-
-# Check if standard_model already exists
-SKIP_ENV_CREATION=false
-
-if [ -d "standard_model" ]; then
-    echo -e "${YELLOW}[⚠]${NC} Virtual environment 'standard_model' already exists."
-    read -p "Do you want to recreate it? (y/N): " -n 1 -r
-    echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        print_status "Removing existing environment..."
-        rm -rf standard_model
+        rm -rf "$REPO_DIR"
     else
-        print_status "Using existing environment. Checking dependencies..."
-        SKIP_ENV_CREATION=true
-        
-        # Check if key packages are installed in standard_model
-        if standard_model/bin/python -c "import torch, transformers, datasets, accelerate, smb_utils" 2>/dev/null; then
-            print_success "All dependencies already installed in 'standard_model'!"
-            echo ""
-            print_success "Setup complete! Activate with: source standard_model/bin/activate"
-            exit 0
-        else
-            print_warning "Some dependencies missing in 'standard_model'. Installing..."
-        fi
+        print_status "Using existing '$REPO_DIR' directory."
     fi
 fi
 
-echo ""
-echo -e "${CYAN}==================================${NC}"
-echo -e "${CYAN}        ENVIRONMENT SETUP${NC}"
-echo -e "${CYAN}==================================${NC}"
-echo ""
-
-# Only create environment if needed
-if [ "$SKIP_ENV_CREATION" = false ]; then
-    ( pip install --upgrade pip > /dev/null 2>&1 ) &
-    show_spinner $! "Upgrading pip..."
-
-    ( pip install uv > /dev/null 2>&1 ) &
-    show_spinner $! "Installing uv package manager..."
-
-    print_status "Creating virtual environment 'standard_model' (Python 3.11)..."
-    uv venv standard_model --python 3.11
-else
-    print_status "Skipping environment creation, using existing 'standard_model'"
+if [ ! -d "$REPO_DIR" ]; then
+    ( git clone --depth 1 "$REPO_URL" "$REPO_DIR" > /dev/null 2>&1 ) &
+    show_spinner $! "Cloning quickstart repo..."
 fi
 
+cd "$REPO_DIR" || { print_error "Failed to enter $REPO_DIR"; exit 1; }
+
+# ── Install dependencies ───────────────────────────────────────────
 echo ""
-echo -e "${CYAN}==================================${NC}"
-echo -e "${CYAN}     DEPENDENCY INSTALLATION${NC}"
-echo -e "${CYAN}==================================${NC}"
+echo -e "${CYAN}══════════════════════════════════════${NC}"
+echo -e "${CYAN}       INSTALLING DEPENDENCIES${NC}"
+echo -e "${CYAN}══════════════════════════════════════${NC}"
 echo ""
 
-# Detect platform and CUDA availability
-echo -e "\033[1mAll dependencies will be installed in "standard_model" venv\033[0m"
-print_status "Detecting platform and GPU capabilities..."
+( uv sync 2>&1 ) &
+show_spinner $! "Installing locked dependencies (this may take a few minutes)..."
 
-# Check if NVIDIA GPU is available
-if command -v nvidia-smi &> /dev/null; then
-    CUDA_VERSION=$(nvidia-smi | grep "CUDA Version" | awk '{print $9}' | cut -d. -f1,2)
-    print_success "CUDA detected: Version $CUDA_VERSION"
-    
-    # Install PyTorch with CUDA support using uv
-    if [[ "$CUDA_VERSION" == "12."* ]]; then
-        ( uv pip install --python standard_model torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 > /dev/null 2>&1 ) &
-        show_spinner $! "Installing PyTorch with CUDA 12.x support..."
-    elif [[ "$CUDA_VERSION" == "11."* ]]; then
-        ( uv pip install --python standard_model torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 > /dev/null 2>&1 ) &
-        show_spinner $! "Installing PyTorch with CUDA 11.x support..."
-    fi
+# ── Verify ──────────────────────────────────────────────────────────
+echo ""
+print_status "Verifying installation..."
+
+uv run python -c "
+import torch, transformers, smb_utils
+print(f'  PyTorch:      {torch.__version__}')
+print(f'  Transformers: {transformers.__version__}')
+print(f'  CUDA:         {torch.cuda.is_available()}')
+" 2>/dev/null
+
+if [ $? -eq 0 ]; then
+    print_success "All dependencies verified"
 else
-    print_warning "No CUDA detected, installing CPU-only version"
-    ( uv pip install --python standard_model torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu > /dev/null 2>&1 ) &
-    show_spinner $! "Installing PyTorch (CPU)..."
-fi
-
-# Install HuggingFace libraries
-( uv pip install --python standard_model transformers > /dev/null 2>&1 ) &
-show_spinner $! "Installing HuggingFace transformers..."
-
-( uv pip install --python standard_model datasets > /dev/null 2>&1 ) &
-show_spinner $! "Installing HuggingFace datasets..."
-
-( uv pip install --python standard_model accelerate > /dev/null 2>&1 ) &
-show_spinner $! "Installing HuggingFace accelerate..."
-
-( uv pip install --python standard_model git+https://github.com/standardmodelbio/smb-utils.git > /dev/null 2>&1 ) &
-show_spinner $! "Installing smb_utils..."
-
-( uv pip install --python standard_model lifelines > /dev/null 2>&1 ) &
-show_spinner $! "Installing lifelines (survival analysis)..."
-
-uv pip install --python standard_model python-dotenv > /dev/null 2>&1
-
-# Verify installations
-echo ""
-print_status "Verifying installations..."
-standard_model/bin/python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}')"
-standard_model/bin/python -c "import transformers; print(f'Transformers version: {transformers.__version__}')"
-print_success "Verification complete"
-
-echo ""
-echo -e "${CYAN}==================================${NC}"
-echo -e "${CYAN}  STANDARD MODEL HF INSTALLATION${NC}"
-echo -e "${CYAN}==================================${NC}"
-echo ""
-
-# Install huggingface_hub if not already installed
-( uv pip install --python standard_model huggingface_hub > /dev/null 2>&1 ) &
-show_spinner $! "Installing huggingface_hub..."
-
-# Download the model
-MODEL="standardmodelbio/SMB-v1-1.7B"
-MODEL_NAME=$(basename "$MODEL")
-
-print_status "Checking model accessibility..."
-
-# Check if model is accessible
-MODEL_CHECK=$(standard_model/bin/python << PYEOF
-from huggingface_hub import model_info
-try:
-    info = model_info("$MODEL")
-    print("accessible")
-except Exception as e:
-    if "gated" in str(e).lower() or "private" in str(e).lower():
-        print("private")
-    else:
-        print("error")
-PYEOF
-)
-
-if [ "$MODEL_CHECK" == "private" ]; then
-    print_error "Model '$MODEL' is private or gated."
-    print_warning "Please authenticate with: huggingface-cli login"
-    print_warning "Or request access at: https://huggingface.co/$MODEL"
-    exit 1
-elif [ "$MODEL_CHECK" == "error" ]; then
-    print_error "Failed to access model '$MODEL'. It may not exist."
+    print_error "Verification failed. Try running 'uv sync' manually in the '$REPO_DIR' directory."
     exit 1
 fi
 
-print_success "Model is accessible"
-
-print_status "Downloading $MODEL_NAME..."
-( standard_model/bin/python -c "from huggingface_hub import snapshot_download; snapshot_download('$MODEL')" > /dev/null 2>&1 ) &
-show_spinner $! "Downloading $MODEL_NAME..."
-print_success "Model downloaded to HuggingFace cache (~/.cache/huggingface/)"
-
+# ── Done ────────────────────────────────────────────────────────────
 echo ""
-print_success "Setup complete!"
+echo -e "${CYAN}══════════════════════════════════════${NC}"
+echo -e "${CYAN}            READY TO GO${NC}"
+echo -e "${CYAN}══════════════════════════════════════${NC}"
 echo ""
-echo -e "To get started, activate your environment and run the demo:"
-echo -e "  ${CYAN}source standard_model/bin/activate${NC}"
-echo -e "  ${CYAN}python demo.py${NC}"
+echo -e "${GREEN}Setup complete!${NC} You're in the ${BOLD}quickstart/${NC} directory."
+echo ""
+echo -e "${BOLD}Run the demo with synthetic data:${NC}"
+echo -e "  ${CYAN}cd quickstart${NC}"
+echo -e "  ${CYAN}uv run python demo.py${NC}"
+echo ""
+echo -e "${BOLD}Learn more:${NC}"
+echo -e "  Synthetic data example:  ${CYAN}https://docs.standardmodel.bio/example${NC}"
+echo -e "  Use your own data:       ${CYAN}https://docs.standardmodel.bio/your-own-data${NC}"
 echo ""
