@@ -289,6 +289,8 @@ def run_downstream_tasks(X, df_labels):
     c_index = cph.score(cox_df.iloc[test_idx], scoring_method="concordance_index")
     print(f"   -> C-Index: {c_index:.3f}")
 
+    return {"auc": auc, "accuracy": acc, "mae": mae, "c_index": c_index}
+
 
 # ==========================================
 # CHAPTER 5: Execution
