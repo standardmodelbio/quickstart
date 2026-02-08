@@ -9,7 +9,7 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import accuracy_score, mean_absolute_error, roc_auc_score
 from sklearn.model_selection import train_test_split
-from smb_biopan_utils import process_ehr_info
+from smb_utils import process_ehr_info
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # ==========================================
@@ -252,7 +252,7 @@ def run_downstream_tasks(X, df_labels):
     # --- Task 2: Disease Phenotyping (Multiclass) ---
     print("\n   --- Task B: Multiclass Classification (Phenotype Stage) ---")
     y_mc = df_labels.loc[train_idx, "phenotype_class"]
-    clf_mc = LogisticRegression(multi_class="multinomial", max_iter=1000)
+    clf_mc = LogisticRegression(max_iter=1000)
     clf_mc.fit(X_np[train_idx], y_mc)
 
     y_pred = clf_mc.predict(X_np[test_idx])
@@ -288,6 +288,8 @@ def run_downstream_tasks(X, df_labels):
 
     c_index = cph.score(cox_df.iloc[test_idx], scoring_method="concordance_index")
     print(f"   -> C-Index: {c_index:.3f}")
+
+    return {"auc": auc, "accuracy": acc, "mae": mae, "c_index": c_index}
 
 
 # ==========================================
