@@ -3,7 +3,7 @@ name = "standard-model-quickstart"
 version = "0.1.0"
 description = "Quickstart demo: set up environment, download SMB-v1-1.7B, extract patient embeddings, and train classifiers."
 readme = "README.md"
-requires-python = ">=3.10,<4.0"
+requires-python = ">=3.11,<4.0"
 dependencies = [
     "torch>=2.0.0",
     "transformers>=4.40.0,<5.0",
@@ -15,9 +15,7 @@ dependencies = [
     "lifelines>=0.27.0,<1.0",
     "python-dotenv>=1.0.0,<2.0",
     "huggingface_hub>=0.20.0",
-    # Optional: for EHR formatting in the demo, install with:
-    #   uv pip install "git+https://github.com/standardmodelbio/smb-utils"
-    # (not in dependencies due to version conflicts with monai/transformers)
+    "smb-utils @ git+https://github.com/standardmodelbio/smb-utils",
 ]
 
 [project.optional-dependencies]
