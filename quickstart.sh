@@ -32,19 +32,17 @@ print_success() { echo -e "${GREEN}[✓]${NC} $1"; }
 print_warning() { echo -e "${YELLOW}[⚠]${NC} $1"; }
 print_error()   { echo -e "${RED}[✗]${NC} $1"; }
 
-show_spinner() {
+show_progress() {
     local pid=$1
     local message=$2
-    local spin='⣾⣽⣻⢿⡿⣟⣯⣷'
-    local i=0
-    local spinlen=8
+    local seconds=0
     while kill -0 "$pid" 2>/dev/null; do
-        i=$(( (i+1) % spinlen ))
-        printf "\r${BLUE}[${spin:$i:1}]${NC} %s" "$message"
-        sleep 0.08
+        printf "\r${BLUE}[%02d:%02d]${NC} %s" $((seconds/60)) $((seconds%60)) "$message"
+        sleep 1
+        seconds=$((seconds + 1))
     done
     wait "$pid" 2>/dev/null
-    printf "\r${GREEN}[✓]${NC} %s\n" "$message"
+    printf "\r${GREEN}[✓]${NC} %s ${BLUE}(%02d:%02d)${NC}\n" "$message" $((seconds/60)) $((seconds%60))
 }
 
 REPO_URL="https://github.com/standardmodelbio/quickstart.git"
@@ -98,7 +96,7 @@ fi
 
 if [ ! -d "$REPO_DIR" ]; then
     ( git clone --depth 1 "$REPO_URL" "$REPO_DIR" > /dev/null 2>&1 ) &
-    show_spinner $! "Cloning quickstart repo..."
+    show_progress $! "Cloning quickstart repo..."
 fi
 
 cd "$REPO_DIR" || { print_error "Failed to enter $REPO_DIR"; exit 1; }
@@ -109,27 +107,33 @@ echo -e "${CYAN}═════════════════════�
 echo -e "${CYAN}       INSTALLING DEPENDENCIES${NC}"
 echo -e "${CYAN}══════════════════════════════════════${NC}"
 echo ""
+print_status "First run may take a few minutes (downloading dependencies)..."
+echo ""
 
-( uv sync 2>&1 ) &
-show_spinner $! "Installing locked dependencies (this may take a few minutes)..."
+( uv sync > /dev/null 2>&1 ) &
+show_progress $! "Installing locked dependencies..."
 
 # ── Verify ──────────────────────────────────────────────────────────
 echo ""
-print_status "Verifying installation..."
 
-uv run python -c "
+VERIFY_OUTPUT=$(mktemp)
+( uv run python -c "
 import torch, transformers, smb_utils
 print(f'  PyTorch:      {torch.__version__}')
 print(f'  Transformers: {transformers.__version__}')
 print(f'  CUDA:         {torch.cuda.is_available()}')
-" 2>/dev/null
+" > "$VERIFY_OUTPUT" 2>&1 ) &
+show_progress $! "Verifying installation..."
 
-if [ $? -eq 0 ]; then
+if [ $? -eq 0 ] && grep -q "PyTorch" "$VERIFY_OUTPUT"; then
+    cat "$VERIFY_OUTPUT"
     print_success "All dependencies verified"
 else
     print_error "Verification failed. Try running 'uv sync' manually in the '$REPO_DIR' directory."
+    rm -f "$VERIFY_OUTPUT"
     exit 1
 fi
+rm -f "$VERIFY_OUTPUT"
 
 # ── Done ────────────────────────────────────────────────────────────
 echo ""
