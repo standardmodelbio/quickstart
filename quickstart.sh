@@ -95,7 +95,7 @@ if [ -d "$REPO_DIR" ]; then
 fi
 
 if [ ! -d "$REPO_DIR" ]; then
-    ( git clone --depth 1 "$REPO_URL" "$REPO_DIR" > /dev/null 2>&1 ) &
+    ( git clone --depth 1 --branch quickstart-refactor "$REPO_URL" "$REPO_DIR" > /dev/null 2>&1 ) &
     show_progress $! "Cloning quickstart repo..."
 fi
 

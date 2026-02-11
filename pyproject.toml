@@ -1,7 +1,7 @@
 [project]
 name = "standard-model-quickstart"
 version = "0.1.0"
-description = "Quickstart demo: set up environment, download SMB-v1-1.7B, extract patient embeddings, and train classifiers."
+description = "Quickstart demo: set up environment, download smb-v1-1.7b, extract patient embeddings, and train classifiers."
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 dependencies = [

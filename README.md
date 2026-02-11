@@ -1,6 +1,6 @@
 # Standard Model Quickstart
 
-Set up your environment, download SMB-v1-1.7B, extract patient embeddings from synthetic data, and train classifiers.
+Set up your environment, download smb-v1-1.7b, extract patient embeddings from synthetic data, and train classifiers.
 
 Requires **Python 3.11+**.
 

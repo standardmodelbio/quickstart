@@ -16,7 +16,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 # CHAPTER 1: Setup & Configuration
 # ==========================================
 
-MODEL_ID = "standardmodelbio/SMB-v1-1.7B"
+MODEL_ID = "standardmodelbio/smb-v1-1.7b"
 
 # ==========================================
 # CHAPTER 2: Create Patient Data
@@ -180,7 +180,7 @@ def create_meds_cohort_with_labels(n_patients=200):
 
 def extract_embeddings(df, model, tokenizer):
     """
-    Passes patient timelines through SMB-v1 to get latent vectors.
+    Passes patient timelines through smb-v1 to get latent vectors.
     """
     pids = df["subject_id"].unique()
     n_pids = len(pids)
@@ -301,7 +301,7 @@ if __name__ == "__main__":
     meds_data, labels_data = create_meds_cohort_with_labels(n_patients=200)
 
     # 2. Load Standard Model
-    print("\n[2/4] Loading Standard Model (SMB-v1-1.7B)...")
+    print("\n[2/4] Loading Standard Model (smb-v1-1.7b)...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID, trust_remote_code=True, device_map="auto"
