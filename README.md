@@ -24,7 +24,7 @@ uv sync
 
 ```bash
 cd quickstart
-uv run python demo.py
+uv run demo.py
 ```
 
 ## Tests

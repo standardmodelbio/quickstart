@@ -95,7 +95,7 @@ if [ -d "$REPO_DIR" ]; then
 fi
 
 if [ ! -d "$REPO_DIR" ]; then
-    ( git clone --depth 1 --branch quickstart-refactor "$REPO_URL" "$REPO_DIR" > /dev/null 2>&1 ) &
+    ( git clone --depth 1 "$REPO_URL" "$REPO_DIR" > /dev/null 2>&1 ) &
     show_progress $! "Cloning quickstart repo..."
 fi
 
@@ -113,27 +113,11 @@ echo ""
 ( uv sync > /dev/null 2>&1 ) &
 show_progress $! "Installing locked dependencies..."
 
-# ── Verify ──────────────────────────────────────────────────────────
-echo ""
-
-VERIFY_OUTPUT=$(mktemp)
-( uv run python -c "
-import torch, transformers, smb_utils
-print(f'  PyTorch:      {torch.__version__}')
-print(f'  Transformers: {transformers.__version__}')
-print(f'  CUDA:         {torch.cuda.is_available()}')
-" > "$VERIFY_OUTPUT" 2>&1 ) &
-show_progress $! "Verifying installation..."
-
-if [ $? -eq 0 ] && grep -q "PyTorch" "$VERIFY_OUTPUT"; then
-    cat "$VERIFY_OUTPUT"
-    print_success "All dependencies verified"
-else
-    print_error "Verification failed. Try running 'uv sync' manually in the '$REPO_DIR' directory."
-    rm -f "$VERIFY_OUTPUT"
+if [ $? -ne 0 ]; then
+    print_error "Installation failed. Try running 'uv sync' manually in the '$REPO_DIR' directory."
     exit 1
 fi
-rm -f "$VERIFY_OUTPUT"
+print_success "All dependencies installed"
 
 # ── Done ────────────────────────────────────────────────────────────
 echo ""
@@ -145,7 +129,7 @@ echo -e "${GREEN}Setup complete!${NC} You're in the ${BOLD}quickstart/${NC} dire
 echo ""
 echo -e "${BOLD}Run the demo with synthetic data:${NC}"
 echo -e "  ${CYAN}cd quickstart${NC}"
-echo -e "  ${CYAN}uv run python demo.py${NC}"
+echo -e "  ${CYAN}uv run demo.py${NC}"
 echo ""
 echo -e "${BOLD}Learn more:${NC}"
 echo -e "  Synthetic data example:  ${CYAN}https://docs.standardmodel.bio/example${NC}"
