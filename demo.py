@@ -9,14 +9,14 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.metrics import accuracy_score, mean_absolute_error, roc_auc_score
 from sklearn.model_selection import train_test_split
-from smb_biopan_utils import process_ehr_info
+from smb_utils import process_ehr_info
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # ==========================================
 # CHAPTER 1: Setup & Configuration
 # ==========================================
 
-MODEL_ID = "standardmodelbio/SMB-v1-1.7B"
+MODEL_ID = "standardmodelbio/smb-v1-1.7b"
 
 # ==========================================
 # CHAPTER 2: Create Patient Data
@@ -180,7 +180,7 @@ def create_meds_cohort_with_labels(n_patients=200):
 
 def extract_embeddings(df, model, tokenizer):
     """
-    Passes patient timelines through SMB-v1 to get latent vectors.
+    Passes patient timelines through smb-v1 to get latent vectors.
     """
     pids = df["subject_id"].unique()
     n_pids = len(pids)
@@ -252,7 +252,7 @@ def run_downstream_tasks(X, df_labels):
     # --- Task 2: Disease Phenotyping (Multiclass) ---
     print("\n   --- Task B: Multiclass Classification (Phenotype Stage) ---")
     y_mc = df_labels.loc[train_idx, "phenotype_class"]
-    clf_mc = LogisticRegression(multi_class="multinomial", max_iter=1000)
+    clf_mc = LogisticRegression(max_iter=1000)
     clf_mc.fit(X_np[train_idx], y_mc)
 
     y_pred = clf_mc.predict(X_np[test_idx])
@@ -289,6 +289,8 @@ def run_downstream_tasks(X, df_labels):
     c_index = cph.score(cox_df.iloc[test_idx], scoring_method="concordance_index")
     print(f"   -> C-Index: {c_index:.3f}")
 
+    return {"auc": auc, "accuracy": acc, "mae": mae, "c_index": c_index}
+
 
 # ==========================================
 # CHAPTER 5: Execution
@@ -299,7 +301,7 @@ if __name__ == "__main__":
     meds_data, labels_data = create_meds_cohort_with_labels(n_patients=200)
 
     # 2. Load Standard Model
-    print("\n[2/4] Loading Standard Model (SMB-v1-1.7B)...")
+    print("\n[2/4] Loading Standard Model (smb-v1-1.7b)...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID, trust_remote_code=True, device_map="auto"
