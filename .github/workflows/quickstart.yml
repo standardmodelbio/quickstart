@@ -7,6 +7,14 @@ on:
     branches: [main]
 
 jobs:
+  quickstart-shell-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run quickstart.sh unit tests
+        run: bash tests/test_quickstart.sh
+
   quickstart-test:
     runs-on: ubuntu-latest
     strategy:
