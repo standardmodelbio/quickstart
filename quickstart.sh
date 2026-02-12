@@ -69,16 +69,29 @@ fi
 print_success "git found"
 
 # Install uv if not present
+LOCAL_BIN="$HOME/.local/bin"
+
 if ! command -v uv &>/dev/null; then
     print_status "Installing uv package manager..."
     curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1
-    export PATH="$HOME/.local/bin:$PATH"
-    if ! command -v uv &>/dev/null; then
+    export PATH="$LOCAL_BIN:$PATH"
+    if ! command -v uv &>/dev/null && [ ! -x "$LOCAL_BIN/uv" ]; then
         print_error "Failed to install uv. Install manually: https://docs.astral.sh/uv/"
         exit 1
     fi
+
+    # Make uv available system-wide so it works immediately in any shell
+    # (bash -c subshells can't modify the parent's PATH, so we symlink
+    #  into a directory that's already on PATH)
+    if [ -d /usr/local/bin ] && [ -w /usr/local/bin ] && [ ! -e /usr/local/bin/uv ]; then
+        ln -sf "$LOCAL_BIN/uv" /usr/local/bin/uv
+        print_success "Linked uv into /usr/local/bin"
+    fi
 fi
-print_success "uv found"
+
+# Resolve uv binary (prefer PATH, fall back to direct path)
+UV_BIN="$(command -v uv 2>/dev/null || echo "$LOCAL_BIN/uv")"
+print_success "uv found ($UV_BIN)"
 
 # ── Clone ───────────────────────────────────────────────────────────
 echo ""
@@ -110,11 +123,11 @@ echo ""
 print_status "First run may take a few minutes (downloading dependencies)..."
 echo ""
 
-( uv sync > /dev/null 2>&1 ) &
+( "$UV_BIN" sync > /dev/null 2>&1 ) &
 show_progress $! "Installing locked dependencies..."
 
 if [ $? -ne 0 ]; then
-    print_error "Installation failed. Try running 'uv sync' manually in the '$REPO_DIR' directory."
+    print_error "Installation failed. Please report this issue at https://github.com/standardmodelbio/quickstart/issues"
     exit 1
 fi
 print_success "All dependencies installed"
