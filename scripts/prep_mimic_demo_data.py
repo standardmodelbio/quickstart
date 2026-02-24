@@ -2,19 +2,17 @@
 """
 Prepare MIMIC-IV demo MEDS data for the quickstart demo.
 
-1. Download the MIMIC-IV demo MEDS data (run from any directory):
-   wget -r -N -c -np https://physionet.org/files/mimic-iv-demo-meds/0.0.1/
+From the quickstart repo root, run:
 
-2. From the quickstart repo root, run:
-   uv run scripts/prep_mimic_demo_data.py /path/to/physionet.org/files/mimic-iv-demo-meds/0.0.1
+   uv run scripts/prep_mimic_demo_data.py
 
-The script builds the events table from the wget mirror (train/tuning/held_out shards),
-then assigns labels from a hardcoded table (artificially generated once from model
-embeddings; no model run required). Writes two parquets to data/ (or --output-dir).
+The script downloads the MIMIC-IV demo MEDS data to a temporary directory via wget,
+builds the events table from the train/tuning/held_out shards, assigns labels from
+a hardcoded table, writes both parquets to data/, then removes the temp download.
 
-Output files:
+Output files (in data/ or --output-dir):
     - mimic_iv_demo_meds_events.parquet   (MEDS events: subject_id, time, code, table, value)
-    - mimic_iv_demo_meds_labels.parquet  (one row per subject: artificial task labels)
+    - mimic_iv_demo_meds_labels.parquet   (one row per subject: artificial task labels)
 
 Data source: MIMIC-IV Clinical Database Demo, converted to MEDS. See data/README.md
 and PhysioNet: https://physionet.org/content/mimic-iv-demo-meds/
@@ -24,9 +22,15 @@ License: ODbL (Open Database License). Attribution required.
 from __future__ import annotations
 
 import argparse
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 import pandas as pd
+
+# PhysioNet MIMIC-IV demo MEDS 0.0.1 (used when running without a path)
+MIMIC_DEMO_MEDS_URL = "https://physionet.org/files/mimic-iv-demo-meds/0.0.1/"
 
 
 # Hardcoded labels for the MIMIC-IV demo 100 subjects (generated once from model embeddings).
@@ -252,15 +256,45 @@ def build_labels_table(df_events: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
+def _download_mimic_demo_to_temp() -> tuple[Path, Path]:
+    """
+    Run wget to mirror MIMIC-IV demo MEDS 0.0.1 into a temp directory.
+    Returns (temp_dir, wget_root) where wget_root is the 0.0.1 root under temp_dir.
+    Caller must shutil.rmtree(temp_dir) when done.
+    """
+    temp_dir = Path(tempfile.mkdtemp(prefix="mimic_demo_meds_"))
+    # wget -r -N -c -np creates physionet.org/files/mimic-iv-demo-meds/0.0.1/ under -P dir
+    result = subprocess.run(
+        [
+            "wget",
+            "-r",
+            "-N",
+            "-c",
+            "-np",
+            "-q",  # quiet; remove for debugging
+            MIMIC_DEMO_MEDS_URL,
+            "-P",
+            str(temp_dir),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise RuntimeError(
+            f"wget failed (return code {result.returncode}). "
+            "Ensure wget is installed and the URL is reachable."
+        ) from None
+    wget_root = temp_dir / "physionet.org" / "files" / "mimic-iv-demo-meds" / "0.0.1"
+    if not wget_root.is_dir():
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise RuntimeError(f"wget did not create expected path: {wget_root}")
+    return temp_dir, wget_root
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Prepare MIMIC-IV demo MEDS events and labels for the quickstart demo.",
-        epilog="First run: wget -r -N -c -np https://physionet.org/files/mimic-iv-demo-meds/0.0.1/",
-    )
-    parser.add_argument(
-        "wget_root",
-        type=Path,
-        help="Path to the 0.0.1 root (directory containing data/ and metadata/ from wget).",
     )
     parser.add_argument(
         "--output-dir",
@@ -270,32 +304,37 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    wget_root = args.wget_root.resolve()
-    if not wget_root.is_dir():
-        parser.error(f"Not a directory: {wget_root}")
+    print("Downloading MIMIC-IV demo MEDS (wget to temp dir)...")
+    temp_dir, wget_root = _download_mimic_demo_to_temp()
+    print("  -> Download complete.")
 
-    if args.output_dir is None:
-        repo_root = Path(__file__).resolve().parent.parent
-        output_dir = repo_root / "data"
-    else:
-        output_dir = args.output_dir.resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        if args.output_dir is None:
+            repo_root = Path(__file__).resolve().parent.parent
+            output_dir = repo_root / "data"
+        else:
+            output_dir = args.output_dir.resolve()
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-    events_path = output_dir / "mimic_iv_demo_meds_events.parquet"
-    labels_path = output_dir / "mimic_iv_demo_meds_labels.parquet"
+        events_path = output_dir / "mimic_iv_demo_meds_events.parquet"
+        labels_path = output_dir / "mimic_iv_demo_meds_labels.parquet"
 
-    print("Building events table from train/tuning/held_out shards...")
-    df_events = build_events_table(wget_root)
-    n_events = len(df_events)
-    n_subjects = df_events["subject_id"].nunique()
-    print(f"  -> {n_events} events, {n_subjects} subjects")
-    df_events.to_parquet(events_path, index=False)
-    print(f"Wrote {events_path}")
+        print("Building events table from train/tuning/held_out shards...")
+        df_events = build_events_table(wget_root)
+        n_events = len(df_events)
+        n_subjects = df_events["subject_id"].nunique()
+        print(f"  -> {n_events} events, {n_subjects} subjects")
+        df_events.to_parquet(events_path, index=False)
+        print(f"Wrote {events_path}")
 
-    print("Building labels (hardcoded table for MIMIC-IV demo subjects)...")
-    df_labels = build_labels_table(df_events)
-    df_labels.to_parquet(labels_path, index=False)
-    print(f"Wrote {labels_path}")
+        print("Building labels (hardcoded table for MIMIC-IV demo subjects)...")
+        df_labels = build_labels_table(df_events)
+        df_labels.to_parquet(labels_path, index=False)
+        print(f"Wrote {labels_path}")
+    finally:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            print("Removed temporary download.")
 
 
 if __name__ == "__main__":

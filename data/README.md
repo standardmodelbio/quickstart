@@ -15,14 +15,16 @@ This directory holds the MEDS events and labels used by the quickstart demo (`de
 
 ## Reproducing the data
 
-To regenerate the two parquets from the original PhysioNet release:
+From the quickstart repo root, run the prep script. It downloads the MIMIC-IV demo MEDS release to a temporary directory via wget, builds the events table and labels, writes both parquets to `data/`, then removes the temp directory:
 
-1. Download the MIMIC-IV demo MEDS mirror:
-   ```bash
-   wget -r -N -c -np https://physionet.org/files/mimic-iv-demo-meds/0.0.1/
-   ```
-2. From the quickstart repo root, run the prep script with the path to the `0.0.1` directory (the one that contains `data/` and `metadata/`):
-   ```bash
-   uv run scripts/prep_mimic_demo_data.py /path/to/physionet.org/files/mimic-iv-demo-meds/0.0.1
-   ```
-   Events are built from the wget mirror; labels are looked up from a hardcoded table (no model run). Output is written to `data/` by default.
+```bash
+uv run scripts/prep_mimic_demo_data.py
+```
+
+For reference, the script runs the following to fetch the data (so you know what’s happening under the hood):
+
+```bash
+wget -r -N -c -np https://physionet.org/files/mimic-iv-demo-meds/0.0.1/
+```
+
+Labels are looked up from a hardcoded table (no model run). Output is written to `data/` by default; use `--output-dir` to override.
