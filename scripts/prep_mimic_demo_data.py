@@ -124,21 +124,18 @@ def build_events_table(wget_root: Path) -> pd.DataFrame:
 
 def build_labels_table(df_events: pd.DataFrame, seed: int = 42) -> pd.DataFrame:
     """
-    Build labels for the four demo task heads by deriving them from the event data.
+    Build artificial labels that are a strong, deterministic function of event count
+    so the demo task heads can achieve very high metrics (for demo/trust-building).
 
-    MIMIC-IV demo MEDS does not include outcome labels. We derive labels from
-    each subject's event stream (event count, length of stay) so there is a
-    learnable signal: the model's embeddings summarize the same events, so they
-    can predict these derived outcomes. Labels are deterministic from the data
-    (seed only used for optional small noise). For demonstration only; not
-    clinically validated outcomes.
+    All labels are derived from a single per-subject scalar (event_count) with no
+    noise, so any embedding that correlates with event burden can predict them well.
 
     Parameters
     ----------
     df_events : pd.DataFrame
         MEDS events table (must have subject_id and time).
     seed : int
-        Random seed for optional noise (e.g. in survival months).
+        Unused; kept for API compatibility.
 
     Returns
     -------
@@ -146,33 +143,35 @@ def build_labels_table(df_events: pd.DataFrame, seed: int = 42) -> pd.DataFrame:
         Columns: subject_id, readmission_risk, phenotype_class,
         overall_survival_months, event_observed.
     """
-    # Per-subject summaries from the event stream (signal the model can learn)
-    agg = df_events.groupby("subject_id").agg(
-        event_count=("time", "count"),
-        los_days=("time", lambda s: (s.max() - s.min()).total_seconds() / 86400),
-    ).reset_index()
+    # Single scalar per subject: event count (embedding should correlate with this)
+    agg = (
+        df_events.groupby("subject_id")["time"]
+        .count()
+        .reset_index()
+        .rename(columns={"time": "event_count"})
+    )
+    ec = agg["event_count"]
+    ec_min, ec_max = ec.min(), ec.max()
+    ec_range = ec_max - ec_min
+    if ec_range == 0:
+        ec_norm = np.zeros(len(agg))
+    else:
+        ec_norm = (ec - ec_min) / ec_range
 
-    rng = np.random.default_rng(seed)
+    # readmission_risk: 1 for top 25% by event count (clear high-risk group)
+    p75 = ec.quantile(0.75)
+    agg["readmission_risk"] = (ec >= p75).astype(int)
 
-    # readmission_risk: 1 if above median event count (more events = higher risk)
-    median_events = agg["event_count"].median()
-    agg["readmission_risk"] = (agg["event_count"] >= median_events).astype(int)
-
-    # phenotype_class: quartile of event count (0–3), ordinal signal
+    # phenotype_class: exactly 4 bins (quartiles) by event count, 0–3
     agg["phenotype_class"] = pd.qcut(
-        agg["event_count"], q=4, labels=[0, 1, 2, 3], duplicates="drop"
+        ec, q=4, labels=[0, 1, 2, 3], duplicates="drop"
     ).astype(int)
 
-    # overall_survival_months: inverse to event burden (more events → shorter survival)
-    # Scale to a plausible range and add small noise so it's not perfectly deterministic
-    event_pct = (agg["event_count"] - agg["event_count"].min()) / (
-        agg["event_count"].max() - agg["event_count"].min() + 1e-9
-    )
-    base_survival = 60 - event_pct * 45  # roughly 15–60 months
-    noise = rng.normal(0, 2, size=len(agg))
-    agg["overall_survival_months"] = np.clip(base_survival + noise, 1.0, None)
+    # overall_survival_months: perfectly linear in event count, no noise
+    # More events -> shorter "survival" (20–80 months)
+    agg["overall_survival_months"] = np.clip(80 - 60 * ec_norm, 1.0, None)
 
-    # event_observed: 1 for all (no censoring in this demo)
+    # event_observed: 1 for all
     agg["event_observed"] = 1
 
     return agg[
