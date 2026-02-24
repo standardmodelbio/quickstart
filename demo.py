@@ -1,8 +1,10 @@
+import io
 import random
 from datetime import timedelta
 
 import numpy as np
 import pandas as pd
+import requests
 import torch
 from lifelines import CoxPHFitter
 from sklearn.decomposition import PCA
@@ -15,12 +17,39 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 # ==========================================
 # CHAPTER 1: Setup & Configuration
 # ==========================================
+# Demo data: MIMIC-IV Clinical Database Demo in MEDS format (PhysioNet, ODbL).
+# See https://physionet.org/content/mimic-iv-demo-meds/ and data/README.md.
 
 MODEL_ID = "standardmodelbio/smb-v1-1.7b"
 
+# GitHub raw URLs for the demo parquets (canonical data; loaded into memory at runtime).
+DEMO_EVENTS_URL = "https://raw.githubusercontent.com/standardmodelbio/quickstart/main/data/mimic_iv_demo_meds_events.parquet"
+DEMO_LABELS_URL = "https://raw.githubusercontent.com/standardmodelbio/quickstart/main/data/mimic_iv_demo_meds_labels.parquet"
+
+
 # ==========================================
-# CHAPTER 2: Create Patient Data
+# CHAPTER 2: Load or Create Patient Data
 # ==========================================
+
+
+def load_mimic_iv_demo_from_github():
+    """
+    Fetch MIMIC-IV demo MEDS events and labels from the quickstart repo and load into memory.
+
+    Returns (df_meds, df_labels). No files are written to disk.
+    """
+    print("\n[1/4] Loading MIMIC-IV demo data from GitHub...")
+    print("   -> Demo data: MIMIC-IV demo (MEDS), PhysioNet, ODbL. See data/README.md.")
+    r_events = requests.get(DEMO_EVENTS_URL, timeout=60)
+    r_events.raise_for_status()
+    r_labels = requests.get(DEMO_LABELS_URL, timeout=30)
+    r_labels.raise_for_status()
+    df_meds = pd.read_parquet(io.BytesIO(r_events.content))
+    df_labels = pd.read_parquet(io.BytesIO(r_labels.content))
+    n_events = len(df_meds)
+    n_subjects = df_meds["subject_id"].nunique()
+    print(f"   -> Loaded {n_events} events, {n_subjects} subjects.")
+    return df_meds, df_labels
 
 
 def create_meds_cohort_with_labels(n_patients=200):
@@ -178,9 +207,11 @@ def create_meds_cohort_with_labels(n_patients=200):
 # ==========================================
 
 
-def extract_embeddings(df, model, tokenizer):
+def extract_embeddings(df, model, tokenizer, end_time=None):
     """
     Passes patient timelines through smb-v1 to get latent vectors.
+
+    If end_time is None, uses the latest event time in df (full history).
     """
     pids = df["subject_id"].unique()
     n_pids = len(pids)
@@ -189,8 +220,9 @@ def extract_embeddings(df, model, tokenizer):
     print(f"\n[3/4] Generating embeddings for {n_pids} patients...")
     print("   -> Strategy: Causal Inference (Last Token Pooling)")
 
-    # Define a cutoff to capture the full synthetic history
-    end_time = pd.Timestamp("2024-01-01")
+    if end_time is None:
+        end_time = df["time"].max()
+    end_time = pd.Timestamp(end_time)
 
     for i, pid in enumerate(pids):
         # Progress indicator every 20 patients
@@ -297,8 +329,8 @@ def run_downstream_tasks(X, df_labels):
 # ==========================================
 
 if __name__ == "__main__":
-    # 1. Generate patient data in MEDS format
-    meds_data, labels_data = create_meds_cohort_with_labels(n_patients=200)
+    # 1. Load MIMIC-IV demo MEDS data from GitHub (into memory)
+    meds_data, labels_data = load_mimic_iv_demo_from_github()
 
     # 2. Load Standard Model
     print("\n[2/4] Loading Standard Model (smb-v1-1.7b)...")
@@ -308,8 +340,8 @@ if __name__ == "__main__":
     )
     model.eval()
 
-    # 3. Extract patient embeddings
-    embeddings = extract_embeddings(meds_data, model, tokenizer)
+    # 3. Extract patient embeddings (end_time=None uses full history from data)
+    embeddings = extract_embeddings(meds_data, model, tokenizer, end_time=None)
 
     # 4. Train clinical task heads on various prediction tasks
     run_downstream_tasks(embeddings, labels_data)
