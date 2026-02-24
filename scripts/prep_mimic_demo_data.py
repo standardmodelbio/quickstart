@@ -124,18 +124,21 @@ def build_events_table(wget_root: Path) -> pd.DataFrame:
 
 def build_labels_table(df_events: pd.DataFrame, seed: int = 42) -> pd.DataFrame:
     """
-    Build synthetic labels for the four demo task heads.
+    Build labels for the four demo task heads by deriving them from the event data.
 
-    MIMIC-IV demo MEDS does not include outcome labels. We assign deterministic
-    synthetic labels (one row per subject) so the demo pipeline runs and produces
-    metrics. These are for demonstration only and have no clinical meaning.
+    MIMIC-IV demo MEDS does not include outcome labels. We derive labels from
+    each subject's event stream (event count, length of stay) so there is a
+    learnable signal: the model's embeddings summarize the same events, so they
+    can predict these derived outcomes. Labels are deterministic from the data
+    (seed only used for optional small noise). For demonstration only; not
+    clinically validated outcomes.
 
     Parameters
     ----------
     df_events : pd.DataFrame
-        MEDS events table (must have subject_id).
+        MEDS events table (must have subject_id and time).
     seed : int
-        Random seed for reproducibility.
+        Random seed for optional noise (e.g. in survival months).
 
     Returns
     -------
@@ -143,30 +146,44 @@ def build_labels_table(df_events: pd.DataFrame, seed: int = 42) -> pd.DataFrame:
         Columns: subject_id, readmission_risk, phenotype_class,
         overall_survival_months, event_observed.
     """
+    # Per-subject summaries from the event stream (signal the model can learn)
+    agg = df_events.groupby("subject_id").agg(
+        event_count=("time", "count"),
+        los_days=("time", lambda s: (s.max() - s.min()).total_seconds() / 86400),
+    ).reset_index()
+
     rng = np.random.default_rng(seed)
-    subject_ids = df_events["subject_id"].unique()
 
-    rows = []
-    for sid in subject_ids:
-        # Binary outcome (e.g. readmission risk): 0 or 1
-        readmission_risk = int(rng.integers(0, 2))
-        # Multiclass phenotype: 0, 1, 2, or 3
-        phenotype_class = int(rng.integers(0, 4))
-        # Survival months: positive float; event_observed = 1
-        overall_survival_months = float(max(1.0, rng.normal(24, 12)))
-        event_observed = 1
+    # readmission_risk: 1 if above median event count (more events = higher risk)
+    median_events = agg["event_count"].median()
+    agg["readmission_risk"] = (agg["event_count"] >= median_events).astype(int)
 
-        rows.append(
-            {
-                "subject_id": sid,
-                "readmission_risk": readmission_risk,
-                "phenotype_class": phenotype_class,
-                "overall_survival_months": overall_survival_months,
-                "event_observed": event_observed,
-            }
-        )
+    # phenotype_class: quartile of event count (0–3), ordinal signal
+    agg["phenotype_class"] = pd.qcut(
+        agg["event_count"], q=4, labels=[0, 1, 2, 3], duplicates="drop"
+    ).astype(int)
 
-    return pd.DataFrame(rows)
+    # overall_survival_months: inverse to event burden (more events → shorter survival)
+    # Scale to a plausible range and add small noise so it's not perfectly deterministic
+    event_pct = (agg["event_count"] - agg["event_count"].min()) / (
+        agg["event_count"].max() - agg["event_count"].min() + 1e-9
+    )
+    base_survival = 60 - event_pct * 45  # roughly 15–60 months
+    noise = rng.normal(0, 2, size=len(agg))
+    agg["overall_survival_months"] = np.clip(base_survival + noise, 1.0, None)
+
+    # event_observed: 1 for all (no censoring in this demo)
+    agg["event_observed"] = 1
+
+    return agg[
+        [
+            "subject_id",
+            "readmission_risk",
+            "phenotype_class",
+            "overall_survival_months",
+            "event_observed",
+        ]
+    ].copy()
 
 
 def main() -> None:
@@ -212,8 +229,8 @@ def main() -> None:
     n_events = len(df_events)
     print(f"  -> {n_events} events, {n_subjects} subjects")
 
-    # Build synthetic labels
-    print("Building synthetic labels (for demo task heads)...")
+    # Build labels derived from event data (so the model has a learnable signal)
+    print("Building labels from event data (for demo task heads)...")
     df_labels = build_labels_table(df_events, seed=args.seed)
     print(f"  -> {len(df_labels)} label rows")
 

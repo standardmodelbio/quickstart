@@ -21,10 +21,17 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 # See https://physionet.org/content/mimic-iv-demo-meds/ and data/README.md.
 
 MODEL_ID = "standardmodelbio/smb-v1-1.7b"
+# Short name for console (repo id after last /)
+MODEL_SHORT_NAME = MODEL_ID.split("/")[-1]
 
-# GitHub raw URLs for the demo parquets (canonical data; loaded into memory at runtime).
-DEMO_EVENTS_URL = "https://raw.githubusercontent.com/standardmodelbio/quickstart/main/data/mimic_iv_demo_meds_events.parquet"
-DEMO_LABELS_URL = "https://raw.githubusercontent.com/standardmodelbio/quickstart/main/data/mimic_iv_demo_meds_labels.parquet"
+# Demo pipeline step indices (for [step/total] in console output)
+TOTAL_STEPS = 4
+STEP_DATA, STEP_MODEL, STEP_EMBED, STEP_TASKS = 1, 2, 3, 4
+
+# GitHub raw URLs for the demo parquets (canonical data; always loaded from GitHub at runtime).
+DEMO_BRANCH = "main"
+DEMO_EVENTS_URL = f"https://raw.githubusercontent.com/standardmodelbio/quickstart/{DEMO_BRANCH}/data/mimic_iv_demo_meds_events.parquet"
+DEMO_LABELS_URL = f"https://raw.githubusercontent.com/standardmodelbio/quickstart/{DEMO_BRANCH}/data/mimic_iv_demo_meds_labels.parquet"
 
 
 # ==========================================
@@ -34,11 +41,11 @@ DEMO_LABELS_URL = "https://raw.githubusercontent.com/standardmodelbio/quickstart
 
 def load_mimic_iv_demo_from_github():
     """
-    Fetch MIMIC-IV demo MEDS events and labels from the quickstart repo and load into memory.
+    Fetch MIMIC-IV demo MEDS events and labels from the quickstart repo (GitHub) and load into memory.
 
-    Returns (df_meds, df_labels). No files are written to disk.
+    Returns (df_meds, df_labels). No local files are read; data is always fetched from GitHub.
     """
-    print("\n[1/4] Loading MIMIC-IV demo data from GitHub...")
+    print(f"\n[{STEP_DATA}/{TOTAL_STEPS}] Loading MIMIC-IV demo data from GitHub...")
     print("   -> Demo data: MIMIC-IV demo (MEDS), PhysioNet, ODbL. See data/README.md.")
     r_events = requests.get(DEMO_EVENTS_URL, timeout=60)
     r_events.raise_for_status()
@@ -56,7 +63,7 @@ def create_meds_cohort_with_labels(n_patients=200):
     """
     Generates synthetic MEDS data AND ground truth labels in memory.
     """
-    print(f"\n[1/4] Simulating patient data for N={n_patients}...")
+    print(f"\n[{STEP_DATA}/{TOTAL_STEPS}] Simulating patient data for N={n_patients}...")
 
     # Define clinical concepts to inject
     CONDITIONS = [
@@ -217,7 +224,7 @@ def extract_embeddings(df, model, tokenizer, end_time=None):
     n_pids = len(pids)
     embeddings = []
 
-    print(f"\n[3/4] Generating embeddings for {n_pids} patients...")
+    print(f"\n[{STEP_EMBED}/{TOTAL_STEPS}] Generating embeddings for {n_pids} patients...")
     print("   -> Strategy: Causal Inference (Last Token Pooling)")
 
     if end_time is None:
@@ -226,7 +233,9 @@ def extract_embeddings(df, model, tokenizer, end_time=None):
 
     for i, pid in enumerate(pids):
         # Progress indicator every 20 patients
-        if (i + 1) % 50 == 0:
+        # Progress every 50 patients, or at least at 50% and 100%
+        step = max(1, n_pids // 2)
+        if (i + 1) % step == 0 or (i + 1) == n_pids:
             print(f"   -> Processed {i + 1}/{n_pids} patients...")
 
         # A. Serialize (DataFrame -> String)
@@ -258,7 +267,7 @@ def run_downstream_tasks(X, df_labels):
     """
     Trains standard ML heads on top of the frozen embeddings.
     """
-    print("\n[4/4] Training Clinical Task Heads...")
+    print(f"\n[{STEP_TASKS}/{TOTAL_STEPS}] Training Clinical Task Heads...")
 
     # 1. Alignment: Ensure row X[i] corresponds to label y[i]
     df_labels = df_labels.sort_values("subject_id").reset_index(drop=True)
@@ -333,7 +342,7 @@ if __name__ == "__main__":
     meds_data, labels_data = load_mimic_iv_demo_from_github()
 
     # 2. Load Standard Model
-    print("\n[2/4] Loading Standard Model (smb-v1-1.7b)...")
+    print(f"\n[{STEP_MODEL}/{TOTAL_STEPS}] Loading Standard Model ({MODEL_SHORT_NAME})...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_ID, trust_remote_code=True, device_map="auto"
