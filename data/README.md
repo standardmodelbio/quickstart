@@ -5,7 +5,7 @@ This directory holds the MEDS events and labels used by the quickstart demo (`de
 ## Files
 
 - **mimic_iv_demo_meds_events.parquet** — MEDS event stream: `subject_id`, `time`, `code`, `table`, `value`. One row per clinical event (100 subjects total, from the MIMIC-IV demo).
-- **mimic_iv_demo_meds_labels.parquet** — One row per subject with synthetic task labels: `readmission_risk`, `phenotype_class`, `overall_survival_months`, `event_observed`. Used by the demo’s four task heads; labels are for demonstration only and have no clinical meaning.
+- **mimic_iv_demo_meds_labels.parquet** — One row per subject with **artificially generated** task labels (from the prep script; use `--embed-labels` for embedding-derived labels): `readmission_risk`, `phenotype_class`, `overall_survival_months`, `event_observed`. Used by the demo’s four task heads; labels are for demonstration only and have no clinical meaning.
 
 ## Source and license
 
@@ -24,5 +24,13 @@ To regenerate the two parquets from the original PhysioNet release:
 2. From the quickstart repo root, run the prep script with the path to the `0.0.1` directory (the one that contains `data/` and `metadata/`):
    ```bash
    uv run python scripts/prep_mimic_demo_data.py /path/to/physionet.org/files/mimic-iv-demo-meds/0.0.1
+   ```
+   To generate labels from the Standard Model embeddings (recommended for repo data so the demo gets high metrics), add `--embed-labels`:
+   ```bash
+   uv run python scripts/prep_mimic_demo_data.py /path/to/physionet.org/files/mimic-iv-demo-meds/0.0.1 --embed-labels
+   ```
+   To regenerate only labels from an existing events parquet:
+   ```bash
+   uv run python scripts/prep_mimic_demo_data.py --events-parquet data/mimic_iv_demo_meds_events.parquet --embed-labels
    ```
    Output files are written to `data/` by default. Use `--output-dir` to override.

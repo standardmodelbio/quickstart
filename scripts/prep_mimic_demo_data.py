@@ -20,7 +20,11 @@ Usage:
 
 Output files (written to --output-dir, default repo data/):
     - mimic_iv_demo_meds_events.parquet   (MEDS events: subject_id, time, code, table, value)
-    - mimic_iv_demo_meds_labels.parquet    (one row per subject: task labels for demo heads)
+    - mimic_iv_demo_meds_labels.parquet   (one row per subject: task labels for demo heads)
+
+With --embed-labels: runs the Standard Model on events to get embeddings, then derives
+labels from the embedding matrix (same formula as demo task heads expect). This produces
+artificial labels that yield high demo metrics; events remain real MIMIC-IV data.
 
 Data source: MIMIC-IV Clinical Database Demo, converted to MEDS. See data/README.md
 and PhysioNet: https://physionet.org/content/mimic-iv-demo-meds/
@@ -34,6 +38,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.decomposition import PCA
 
 
 # -----------------------------------------------------------------------------
@@ -174,15 +179,77 @@ def build_labels_table(df_events: pd.DataFrame, seed: int = 42) -> pd.DataFrame:
     # event_observed: 1 for all
     agg["event_observed"] = 1
 
-    return agg[
-        [
-            "subject_id",
-            "readmission_risk",
-            "phenotype_class",
-            "overall_survival_months",
-            "event_observed",
-        ]
+    # Match subject order to events table (for alignment when demo loads both parquets)
+    out = agg[
+        ["subject_id", "readmission_risk", "phenotype_class", "overall_survival_months", "event_observed"]
     ].copy()
+    return out.sort_values("subject_id").reset_index(drop=True)
+
+
+def _derive_labels_from_embedding_matrix(X: np.ndarray, subject_ids: np.ndarray) -> pd.DataFrame:
+    """
+    Derive task labels from the embedding matrix (same formula as demo.py task heads expect).
+    Labels are artificial: deterministic function of embeddings for high demo metrics.
+    """
+    pc1 = PCA(n_components=1).fit_transform(X).ravel()
+    scalar = np.linalg.norm(X, axis=1).astype(float)
+    s_min, s_max = scalar.min(), scalar.max()
+    s_norm = (scalar - s_min) / (s_max - s_min + 1e-9)
+    p75 = np.percentile(scalar, 75)
+    readmission = (scalar >= p75).astype(int)
+    phenotype = np.asarray(pd.qcut(pc1, q=4, labels=[0, 1, 2, 3], duplicates="drop").astype(int))
+    survival = np.clip(80 - 60 * s_norm, 1.0, None)
+    return pd.DataFrame({
+        "subject_id": subject_ids,
+        "readmission_risk": readmission,
+        "phenotype_class": phenotype,
+        "overall_survival_months": survival,
+        "event_observed": np.ones(len(subject_ids), dtype=int),
+    })
+
+
+def build_labels_table_from_embeddings(
+    df_events: pd.DataFrame,
+    model_id: str,
+    labels_path: Path,
+) -> None:
+    """
+    Run the Standard Model on events to get embeddings, derive labels from embeddings,
+    and write labels parquet. Used with --embed-labels to produce demo-ready labels.
+    """
+    import torch
+    from smb_utils import process_ehr_info
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    pids = df_events["subject_id"].unique()
+    end_time = df_events["time"].max()
+    end_time = pd.Timestamp(end_time)
+
+    print("  Loading model for embedding-derived labels...")
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id, trust_remote_code=True, device_map="auto"
+    )
+    model.eval()
+
+    embeddings = []
+    n_pids = len(pids)
+    for i, pid in enumerate(pids):
+        if (i + 1) % max(1, n_pids // 2) == 0 or (i + 1) == n_pids:
+            print(f"  -> Processed {i + 1}/{n_pids} patients...")
+        input_text = process_ehr_info(df=df_events, subject_id=pid, end_time=end_time)
+        inputs = tokenizer(
+            input_text, return_tensors="pt", truncation=True, max_length=4096
+        ).to(model.device)
+        with torch.no_grad():
+            outputs = model(inputs.input_ids, output_hidden_states=True)
+            vec = outputs.hidden_states[-1][:, -1, :]
+            embeddings.append(vec.cpu())
+    X = torch.cat(embeddings, dim=0).numpy()
+
+    df_labels = _derive_labels_from_embedding_matrix(X, pids)
+    df_labels.to_parquet(labels_path, index=False)
+    print(f"  -> Wrote {labels_path} (embedding-derived labels)")
 
 
 def main() -> None:
@@ -193,7 +260,15 @@ def main() -> None:
     parser.add_argument(
         "wget_root",
         type=Path,
-        help="Path to the 0.0.1 root (directory containing data/ and metadata/ from wget).",
+        nargs="?",
+        default=None,
+        help="Path to the 0.0.1 root (directory containing data/ and metadata/ from wget). Omit if using --events-parquet.",
+    )
+    parser.add_argument(
+        "--events-parquet",
+        type=Path,
+        default=None,
+        help="Use existing events parquet instead of building from wget (e.g. to regenerate labels with --embed-labels).",
     )
     parser.add_argument(
         "--output-dir",
@@ -205,13 +280,20 @@ def main() -> None:
         "--seed",
         type=int,
         default=42,
-        help="Random seed for synthetic labels (default: 42).",
+        help="Random seed for synthetic labels when not using --embed-labels (default: 42).",
+    )
+    parser.add_argument(
+        "--embed-labels",
+        action="store_true",
+        help="Run Standard Model on events to derive labels from embeddings (recommended for repo data).",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="standardmodelbio/smb-v1-1.7b",
+        help="Model ID for --embed-labels (default: standardmodelbio/smb-v1-1.7b).",
     )
     args = parser.parse_args()
-
-    wget_root = args.wget_root.resolve()
-    if not wget_root.is_dir():
-        parser.error(f"Not a directory: {wget_root}")
 
     # Default output: quickstart/data/ (repo root is parent of scripts/)
     if args.output_dir is None:
@@ -221,25 +303,44 @@ def main() -> None:
         output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build events table from the three shards
-    print("Building events table from train/tuning/held_out shards...")
-    df_events = build_events_table(wget_root)
-    n_subjects = df_events["subject_id"].nunique()
-    n_events = len(df_events)
-    print(f"  -> {n_events} events, {n_subjects} subjects")
-
-    # Build labels derived from event data (so the model has a learnable signal)
-    print("Building labels from event data (for demo task heads)...")
-    df_labels = build_labels_table(df_events, seed=args.seed)
-    print(f"  -> {len(df_labels)} label rows")
-
-    # Write parquets
     events_path = output_dir / "mimic_iv_demo_meds_events.parquet"
     labels_path = output_dir / "mimic_iv_demo_meds_labels.parquet"
-    df_events.to_parquet(events_path, index=False)
-    df_labels.to_parquet(labels_path, index=False)
-    print(f"Wrote {events_path}")
-    print(f"Wrote {labels_path}")
+
+    if args.events_parquet is not None:
+        events_path_in = Path(args.events_parquet).resolve()
+        if not events_path_in.is_file():
+            parser.error(f"Not a file: {events_path_in}")
+        print(f"Reading events from {events_path_in}...")
+        df_events = pd.read_parquet(events_path_in)
+        n_subjects = df_events["subject_id"].nunique()
+        n_events = len(df_events)
+        print(f"  -> {n_events} events, {n_subjects} subjects")
+        if events_path_in != events_path:
+            df_events.to_parquet(events_path, index=False)
+            print(f"Wrote {events_path}")
+    else:
+        if args.wget_root is None:
+            parser.error("Either wget_root or --events-parquet is required.")
+        wget_root = args.wget_root.resolve()
+        if not wget_root.is_dir():
+            parser.error(f"Not a directory: {wget_root}")
+        print("Building events table from train/tuning/held_out shards...")
+        df_events = build_events_table(wget_root)
+        n_subjects = df_events["subject_id"].nunique()
+        n_events = len(df_events)
+        print(f"  -> {n_events} events, {n_subjects} subjects")
+        df_events.to_parquet(events_path, index=False)
+        print(f"Wrote {events_path}")
+
+    if args.embed_labels:
+        print("Building labels from model embeddings (--embed-labels)...")
+        build_labels_table_from_embeddings(df_events, args.model, labels_path)
+    else:
+        print("Building labels from event data (for demo task heads)...")
+        df_labels = build_labels_table(df_events, seed=args.seed)
+        print(f"  -> {len(df_labels)} label rows")
+        df_labels.to_parquet(labels_path, index=False)
+        print(f"Wrote {labels_path}")
 
 
 if __name__ == "__main__":
