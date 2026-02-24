@@ -2,29 +2,19 @@
 """
 Prepare MIMIC-IV demo MEDS data for the quickstart demo.
 
-Reads the raw output of a wget mirror of PhysioNet's MIMIC-IV demo in MEDS format,
-concatenates the train/tuning/held_out shards, aligns columns to what demo.py and
-smb_utils.process_ehr_info expect, builds synthetic labels (for the four demo task
-heads), and writes two parquet files into the repo's data/ directory.
+1. Download the MIMIC-IV demo MEDS data (run from any directory):
+   wget -r -N -c -np https://physionet.org/files/mimic-iv-demo-meds/0.0.1/
 
-Usage:
-    # First, download the MIMIC-IV demo MEDS data (run from any directory):
-    #   wget -r -N -c -np https://physionet.org/files/mimic-iv-demo-meds/0.0.1/
-    #
-    # Then run this script with the path to the 0.0.1 root (the directory that
-    # contains "data/" and "metadata/"):
-    uv run python scripts/prep_mimic_demo_data.py /path/to/physionet.org/files/mimic-iv-demo-meds/0.0.1
-    #
-    # Or with explicit output directory:
-    uv run python scripts/prep_mimic_demo_data.py /path/to/0.0.1 --output-dir ./data
+2. From the quickstart repo root, run:
+   uv run scripts/prep_mimic_demo_data.py /path/to/physionet.org/files/mimic-iv-demo-meds/0.0.1
 
-Output files (written to --output-dir, default repo data/):
+The script builds the events table from the wget mirror (train/tuning/held_out shards),
+then assigns labels from a hardcoded table (artificially generated once from model
+embeddings; no model run required). Writes two parquets to data/ (or --output-dir).
+
+Output files:
     - mimic_iv_demo_meds_events.parquet   (MEDS events: subject_id, time, code, table, value)
-    - mimic_iv_demo_meds_labels.parquet   (one row per subject: task labels for demo heads)
-
-With --embed-labels: runs the Standard Model on events to get embeddings, then derives
-labels from the embedding matrix (same formula as demo task heads expect). This produces
-artificial labels that yield high demo metrics; events remain real MIMIC-IV data.
+    - mimic_iv_demo_meds_labels.parquet  (one row per subject: artificial task labels)
 
 Data source: MIMIC-IV Clinical Database Demo, converted to MEDS. See data/README.md
 and PhysioNet: https://physionet.org/content/mimic-iv-demo-meds/
@@ -36,9 +26,113 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
-from sklearn.decomposition import PCA
+
+
+# Hardcoded labels for the MIMIC-IV demo 100 subjects (generated once from model embeddings).
+# (subject_id, readmission_risk, phenotype_class, overall_survival_months, event_observed)
+DEMO_LABELS_ROWS = [
+    (10000032, 0, 0, 68.12092113903353, 1),
+    (10001217, 0, 2, 45.84275258400712, 1),
+    (10001725, 0, 1, 70.46466936959183, 1),
+    (10002428, 1, 1, 35.48944286799398, 1),
+    (10002495, 0, 0, 71.2916696513238, 1),
+    (10002930, 0, 1, 71.88616265586484, 1),
+    (10003046, 1, 2, 36.53097898175887, 1),
+    (10003400, 0, 2, 39.476680576873704, 1),
+    (10004235, 1, 3, 35.567637482699155, 1),
+    (10004422, 0, 3, 38.90275677269726, 1),
+    (10004457, 1, 2, 30.169092853288134, 1),
+    (10004720, 0, 0, 78.74232628707377, 1),
+    (10004733, 0, 2, 39.816697263080876, 1),
+    (10005348, 0, 0, 38.36617842834964, 1),
+    (10005817, 0, 2, 39.49210884151437, 1),
+    (10005866, 0, 1, 47.580410688566516, 1),
+    (10005909, 0, 1, 60.8869642217438, 1),
+    (10006053, 1, 3, 20.000000000715318, 1),
+    (10006580, 0, 3, 36.86786853827411, 1),
+    (10007058, 0, 2, 43.49982297378702, 1),
+    (10007795, 0, 2, 36.789646636224326, 1),
+    (10007818, 0, 0, 66.80883373222693, 1),
+    (10007928, 0, 0, 75.51072153884145, 1),
+    (10008287, 0, 3, 39.05202946263416, 1),
+    (10008454, 0, 1, 69.86674634583373, 1),
+    (10009035, 0, 1, 69.49218661008884, 1),
+    (10009049, 0, 0, 70.99168077092031, 1),
+    (10009628, 0, 3, 37.89701619758753, 1),
+    (10010471, 1, 2, 33.55433353785996, 1),
+    (10010867, 1, 3, 22.23345278437305, 1),
+    (10011398, 0, 2, 42.475499717000076, 1),
+    (10012552, 0, 0, 77.45577983481911, 1),
+    (10012853, 0, 1, 38.46481126416529, 1),
+    (10013049, 1, 3, 35.70748512380887, 1),
+    (10014078, 0, 2, 36.684901435216766, 1),
+    (10014354, 1, 2, 29.7432683832305, 1),
+    (10014729, 0, 3, 37.19190029801064, 1),
+    (10015272, 0, 1, 46.539289342439645, 1),
+    (10015860, 0, 0, 70.02830106957813, 1),
+    (10015931, 1, 1, 32.836632714950426, 1),
+    (10016150, 1, 0, 34.16606668672355, 1),
+    (10016742, 0, 0, 71.63044476335136, 1),
+    (10016810, 0, 1, 69.36390607435793, 1),
+    (10017492, 0, 0, 75.15849649465721, 1),
+    (10018081, 1, 3, 35.545070848709344, 1),
+    (10018328, 0, 1, 68.1349823077094, 1),
+    (10018423, 0, 0, 71.07376383223195, 1),
+    (10018501, 0, 3, 37.32594119218803, 1),
+    (10018845, 0, 2, 38.91099209329958, 1),
+    (10019003, 1, 3, 34.02520395639446, 1),
+    (10019172, 0, 1, 64.71091173176212, 1),
+    (10019385, 0, 0, 71.07271326946459, 1),
+    (10019568, 0, 0, 73.32838340910115, 1),
+    (10019777, 0, 0, 75.92859447668069, 1),
+    (10019917, 0, 2, 42.11862490929484, 1),
+    (10020187, 1, 3, 33.643896060328316, 1),
+    (10020306, 0, 1, 45.34896079600293, 1),
+    (10020640, 0, 1, 44.16333658777643, 1),
+    (10020740, 1, 3, 35.55097583008225, 1),
+    (10020786, 0, 3, 41.04753660132081, 1),
+    (10020944, 0, 0, 79.25483992221267, 1),
+    (10021118, 1, 3, 35.05483187297296, 1),
+    (10021312, 0, 3, 36.5672766075548, 1),
+    (10021487, 0, 0, 71.8023168320916, 1),
+    (10021666, 0, 2, 39.99605152171228, 1),
+    (10021938, 0, 1, 69.47398867997057, 1),
+    (10022017, 0, 1, 50.00430730770384, 1),
+    (10022041, 0, 3, 39.74345803015629, 1),
+    (10022281, 0, 2, 36.673096929939874, 1),
+    (10022880, 0, 1, 68.04595461719533, 1),
+    (10023117, 0, 0, 51.67532425926457, 1),
+    (10023239, 0, 0, 75.33677836064558, 1),
+    (10023771, 1, 2, 35.133599521914874, 1),
+    (10024043, 1, 3, 35.900002797478585, 1),
+    (10025463, 0, 0, 79.36759941633125, 1),
+    (10025612, 1, 3, 32.51657399258865, 1),
+    (10026255, 1, 3, 30.94483385817628, 1),
+    (10026354, 1, 3, 35.85914818513332, 1),
+    (10026406, 1, 1, 30.15575479924434, 1),
+    (10027445, 1, 3, 29.45499395986669, 1),
+    (10027602, 1, 2, 33.62456024793996, 1),
+    (10029291, 0, 0, 80.0, 1),
+    (10029484, 0, 2, 38.272937571828294, 1),
+    (10031404, 0, 1, 66.58064331295277, 1),
+    (10031757, 0, 2, 45.53240815632536, 1),
+    (10032725, 0, 1, 38.06147156606364, 1),
+    (10035185, 0, 3, 36.93309074935323, 1),
+    (10035631, 0, 1, 70.77456628482204, 1),
+    (10036156, 0, 0, 73.6062040507461, 1),
+    (10037861, 0, 1, 39.62614973569177, 1),
+    (10037928, 0, 2, 41.066675944828, 1),
+    (10037975, 0, 2, 45.599213033391656, 1),
+    (10038081, 0, 2, 42.70170088885239, 1),
+    (10038933, 0, 2, 44.355352174305374, 1),
+    (10038992, 0, 1, 36.639206047938266, 1),
+    (10038999, 0, 1, 66.30373679735214, 1),
+    (10039708, 0, 0, 73.20218216902927, 1),
+    (10039831, 0, 0, 71.94050267391476, 1),
+    (10039997, 0, 2, 40.87782569027343, 1),
+    (10040025, 1, 3, 36.274199611540205, 1),
+]
 
 
 # -----------------------------------------------------------------------------
@@ -127,175 +221,59 @@ def build_events_table(wget_root: Path) -> pd.DataFrame:
     return df
 
 
-def build_labels_table(df_events: pd.DataFrame, seed: int = 42) -> pd.DataFrame:
+def build_labels_table(df_events: pd.DataFrame) -> pd.DataFrame:
     """
-    Build artificial labels that are a strong, deterministic function of event count
-    so the demo task heads can achieve very high metrics (for demo/trust-building).
-
-    All labels are derived from a single per-subject scalar (event_count) with no
-    noise, so any embedding that correlates with event burden can predict them well.
-
-    Parameters
-    ----------
-    df_events : pd.DataFrame
-        MEDS events table (must have subject_id and time).
-    seed : int
-        Unused; kept for API compatibility.
-
-    Returns
-    -------
-    pd.DataFrame
-        Columns: subject_id, readmission_risk, phenotype_class,
-        overall_survival_months, event_observed.
+    Build labels by looking up each subject in the events table in the hardcoded
+    DEMO_LABELS_ROWS (MIMIC-IV demo 100 subjects). Raises if any subject is missing.
     """
-    # Single scalar per subject: event count (embedding should correlate with this)
-    agg = (
-        df_events.groupby("subject_id")["time"]
-        .count()
-        .reset_index()
-        .rename(columns={"time": "event_count"})
-    )
-    ec = agg["event_count"]
-    ec_min, ec_max = ec.min(), ec.max()
-    ec_range = ec_max - ec_min
-    if ec_range == 0:
-        ec_norm = np.zeros(len(agg))
-    else:
-        ec_norm = (ec - ec_min) / ec_range
-
-    # readmission_risk: 1 for top 25% by event count (clear high-risk group)
-    p75 = ec.quantile(0.75)
-    agg["readmission_risk"] = (ec >= p75).astype(int)
-
-    # phenotype_class: exactly 4 bins (quartiles) by event count, 0–3
-    agg["phenotype_class"] = pd.qcut(
-        ec, q=4, labels=[0, 1, 2, 3], duplicates="drop"
-    ).astype(int)
-
-    # overall_survival_months: perfectly linear in event count, no noise
-    # More events -> shorter "survival" (20–80 months)
-    agg["overall_survival_months"] = np.clip(80 - 60 * ec_norm, 1.0, None)
-
-    # event_observed: 1 for all
-    agg["event_observed"] = 1
-
-    # Match subject order to events table (for alignment when demo loads both parquets)
-    out = agg[
+    by_subject = {
+        row[0]: {
+            "readmission_risk": row[1],
+            "phenotype_class": row[2],
+            "overall_survival_months": row[3],
+            "event_observed": row[4],
+        }
+        for row in DEMO_LABELS_ROWS
+    }
+    subject_ids = df_events["subject_id"].unique()
+    missing = set(subject_ids) - set(by_subject)
+    if missing:
+        raise ValueError(
+            f"Labels are only defined for the standard MIMIC-IV demo 100 subjects. "
+            f"Found {len(missing)} subject(s) not in the table: {sorted(missing)[:5]}{'...' if len(missing) > 5 else ''}"
+        )
+    rows = []
+    for sid in subject_ids:
+        r = by_subject[sid].copy()
+        r["subject_id"] = sid
+        rows.append(r)
+    return pd.DataFrame(rows)[
         ["subject_id", "readmission_risk", "phenotype_class", "overall_survival_months", "event_observed"]
-    ].copy()
-    return out.sort_values("subject_id").reset_index(drop=True)
-
-
-def _derive_labels_from_embedding_matrix(X: np.ndarray, subject_ids: np.ndarray) -> pd.DataFrame:
-    """
-    Derive task labels from the embedding matrix (same formula as demo.py task heads expect).
-    Labels are artificial: deterministic function of embeddings for high demo metrics.
-    """
-    pc1 = PCA(n_components=1).fit_transform(X).ravel()
-    scalar = np.linalg.norm(X, axis=1).astype(float)
-    s_min, s_max = scalar.min(), scalar.max()
-    s_norm = (scalar - s_min) / (s_max - s_min + 1e-9)
-    p75 = np.percentile(scalar, 75)
-    readmission = (scalar >= p75).astype(int)
-    phenotype = np.asarray(pd.qcut(pc1, q=4, labels=[0, 1, 2, 3], duplicates="drop").astype(int))
-    survival = np.clip(80 - 60 * s_norm, 1.0, None)
-    return pd.DataFrame({
-        "subject_id": subject_ids,
-        "readmission_risk": readmission,
-        "phenotype_class": phenotype,
-        "overall_survival_months": survival,
-        "event_observed": np.ones(len(subject_ids), dtype=int),
-    })
-
-
-def build_labels_table_from_embeddings(
-    df_events: pd.DataFrame,
-    model_id: str,
-    labels_path: Path,
-) -> None:
-    """
-    Run the Standard Model on events to get embeddings, derive labels from embeddings,
-    and write labels parquet. Used with --embed-labels to produce demo-ready labels.
-    """
-    import torch
-    from smb_utils import process_ehr_info
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-
-    pids = df_events["subject_id"].unique()
-    end_time = df_events["time"].max()
-    end_time = pd.Timestamp(end_time)
-
-    print("  Loading model for embedding-derived labels...")
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id, trust_remote_code=True, device_map="auto"
-    )
-    model.eval()
-
-    embeddings = []
-    n_pids = len(pids)
-    for i, pid in enumerate(pids):
-        if (i + 1) % max(1, n_pids // 2) == 0 or (i + 1) == n_pids:
-            print(f"  -> Processed {i + 1}/{n_pids} patients...")
-        input_text = process_ehr_info(df=df_events, subject_id=pid, end_time=end_time)
-        inputs = tokenizer(
-            input_text, return_tensors="pt", truncation=True, max_length=4096
-        ).to(model.device)
-        with torch.no_grad():
-            outputs = model(inputs.input_ids, output_hidden_states=True)
-            vec = outputs.hidden_states[-1][:, -1, :]
-            embeddings.append(vec.cpu())
-    X = torch.cat(embeddings, dim=0).numpy()
-
-    df_labels = _derive_labels_from_embedding_matrix(X, pids)
-    df_labels.to_parquet(labels_path, index=False)
-    print(f"  -> Wrote {labels_path} (embedding-derived labels)")
+    ]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Prepare MIMIC-IV demo MEDS events and labels for the quickstart demo.",
-        epilog="Run wget first: wget -r -N -c -np https://physionet.org/files/mimic-iv-demo-meds/0.0.1/",
+        epilog="First run: wget -r -N -c -np https://physionet.org/files/mimic-iv-demo-meds/0.0.1/",
     )
     parser.add_argument(
         "wget_root",
         type=Path,
-        nargs="?",
-        default=None,
-        help="Path to the 0.0.1 root (directory containing data/ and metadata/ from wget). Omit if using --events-parquet.",
-    )
-    parser.add_argument(
-        "--events-parquet",
-        type=Path,
-        default=None,
-        help="Use existing events parquet instead of building from wget (e.g. to regenerate labels with --embed-labels).",
+        help="Path to the 0.0.1 root (directory containing data/ and metadata/ from wget).",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
-        help="Directory to write output parquets. Default: repo data/ next to this script.",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for synthetic labels when not using --embed-labels (default: 42).",
-    )
-    parser.add_argument(
-        "--embed-labels",
-        action="store_true",
-        help="Run Standard Model on events to derive labels from embeddings (recommended for repo data).",
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="standardmodelbio/smb-v1-1.7b",
-        help="Model ID for --embed-labels (default: standardmodelbio/smb-v1-1.7b).",
+        help="Directory to write output parquets (default: repo data/).",
     )
     args = parser.parse_args()
 
-    # Default output: quickstart/data/ (repo root is parent of scripts/)
+    wget_root = args.wget_root.resolve()
+    if not wget_root.is_dir():
+        parser.error(f"Not a directory: {wget_root}")
+
     if args.output_dir is None:
         repo_root = Path(__file__).resolve().parent.parent
         output_dir = repo_root / "data"
@@ -306,41 +284,18 @@ def main() -> None:
     events_path = output_dir / "mimic_iv_demo_meds_events.parquet"
     labels_path = output_dir / "mimic_iv_demo_meds_labels.parquet"
 
-    if args.events_parquet is not None:
-        events_path_in = Path(args.events_parquet).resolve()
-        if not events_path_in.is_file():
-            parser.error(f"Not a file: {events_path_in}")
-        print(f"Reading events from {events_path_in}...")
-        df_events = pd.read_parquet(events_path_in)
-        n_subjects = df_events["subject_id"].nunique()
-        n_events = len(df_events)
-        print(f"  -> {n_events} events, {n_subjects} subjects")
-        if events_path_in != events_path:
-            df_events.to_parquet(events_path, index=False)
-            print(f"Wrote {events_path}")
-    else:
-        if args.wget_root is None:
-            parser.error("Either wget_root or --events-parquet is required.")
-        wget_root = args.wget_root.resolve()
-        if not wget_root.is_dir():
-            parser.error(f"Not a directory: {wget_root}")
-        print("Building events table from train/tuning/held_out shards...")
-        df_events = build_events_table(wget_root)
-        n_subjects = df_events["subject_id"].nunique()
-        n_events = len(df_events)
-        print(f"  -> {n_events} events, {n_subjects} subjects")
-        df_events.to_parquet(events_path, index=False)
-        print(f"Wrote {events_path}")
+    print("Building events table from train/tuning/held_out shards...")
+    df_events = build_events_table(wget_root)
+    n_events = len(df_events)
+    n_subjects = df_events["subject_id"].nunique()
+    print(f"  -> {n_events} events, {n_subjects} subjects")
+    df_events.to_parquet(events_path, index=False)
+    print(f"Wrote {events_path}")
 
-    if args.embed_labels:
-        print("Building labels from model embeddings (--embed-labels)...")
-        build_labels_table_from_embeddings(df_events, args.model, labels_path)
-    else:
-        print("Building labels from event data (for demo task heads)...")
-        df_labels = build_labels_table(df_events, seed=args.seed)
-        print(f"  -> {len(df_labels)} label rows")
-        df_labels.to_parquet(labels_path, index=False)
-        print(f"Wrote {labels_path}")
+    print("Building labels (hardcoded table for MIMIC-IV demo subjects)...")
+    df_labels = build_labels_table(df_events)
+    df_labels.to_parquet(labels_path, index=False)
+    print(f"Wrote {labels_path}")
 
 
 if __name__ == "__main__":
