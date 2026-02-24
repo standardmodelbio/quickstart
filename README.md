@@ -27,6 +27,21 @@ cd quickstart
 uv run demo.py
 ```
 
+## Regenerate demo data (optional)
+
+The demo fetches events and labels from GitHub. To rebuild them locally, run the prep script. It downloads the [MIMIC-IV demo MEDS](https://physionet.org/content/mimic-iv-demo-meds/) to a temp dir (via wget), builds both parquets in `data/`, then removes the temp dir:
+
+```bash
+cd quickstart
+uv run scripts/prep_mimic_demo_data.py
+```
+
+For reference, the script uses wget to fetch the data:
+
+```bash
+wget -r -N -c -np https://physionet.org/files/mimic-iv-demo-meds/0.0.1/
+```
+
 ## Tests
 
 ```bash
