@@ -197,6 +197,18 @@ def create_meds_cohort_with_labels(n_patients=200):
         .reset_index(drop=True)
     )
     df_labels = pd.DataFrame(labels)
+    # Single prediction time for all (same as MEDS labels file as source of truth)
+    df_labels["prediction_time"] = pd.Timestamp(df_meds["time"].max())
+    df_labels = df_labels[
+        [
+            "subject_id",
+            "prediction_time",
+            "readmission_risk",
+            "phenotype_class",
+            "overall_survival_months",
+            "event_observed",
+        ]
+    ]
 
     # Verbose stats
     n_cancer = df_labels["readmission_risk"].sum()
@@ -344,8 +356,13 @@ if __name__ == "__main__":
     )
     model.eval()
 
-    # 3. Extract patient embeddings (end_time=None uses full history from data)
-    embeddings = extract_embeddings(meds_data, model, tokenizer, end_time=None)
+    # 3. Extract patient embeddings using prediction_time from labels (MEDS: labels define when we predict)
+    end_time = (
+        labels_data["prediction_time"].iloc[0]
+        if "prediction_time" in labels_data.columns
+        else None
+    )
+    embeddings = extract_embeddings(meds_data, model, tokenizer, end_time=end_time)
 
     # 4. Train clinical task heads on various prediction tasks
     run_downstream_tasks(embeddings, labels_data)
