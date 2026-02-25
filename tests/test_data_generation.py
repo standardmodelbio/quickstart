@@ -23,8 +23,8 @@ def test_create_meds_cohort_with_labels_shape_and_columns():
     for col in ["subject_id", "time", "code", "table"]:
         assert col in df_meds.columns, f"df_meds missing column {col}"
 
-    # Labels: subject_id, readmission_risk, phenotype_class, overall_survival_months, event_observed
-    for col in ["subject_id", "readmission_risk", "phenotype_class", "overall_survival_months", "event_observed"]:
+    # Labels: subject_id, prediction_time, readmission_risk, phenotype_class, overall_survival_months, event_observed
+    for col in ["subject_id", "prediction_time", "readmission_risk", "phenotype_class", "overall_survival_months", "event_observed"]:
         assert col in df_labels.columns, f"df_labels missing column {col}"
 
 

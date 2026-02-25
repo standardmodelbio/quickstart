@@ -19,6 +19,7 @@ def test_build_labels_table_returns_correct_columns_and_order():
     out = prep.build_labels_table(df_events)
     assert list(out.columns) == [
         "subject_id",
+        "prediction_time",
         "readmission_risk",
         "phenotype_class",
         "overall_survival_months",
@@ -26,6 +27,9 @@ def test_build_labels_table_returns_correct_columns_and_order():
     ]
     assert len(out) == 3
     assert out["subject_id"].tolist() == subject_ids
+    # prediction_time is single value for all (max event time)
+    expected_pt = pd.Timestamp("2022-01-02")  # max of the two dates per subject
+    assert (out["prediction_time"] == expected_pt).all()
     # Spot-check one row (10000032 -> 0, 0, 68.12..., 1)
     row = out[out["subject_id"] == 10000032].iloc[0]
     assert row["readmission_risk"] == 0

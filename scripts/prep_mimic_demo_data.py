@@ -229,7 +229,10 @@ def build_labels_table(df_events: pd.DataFrame) -> pd.DataFrame:
     """
     Build labels by looking up each subject in the events table in the hardcoded
     DEMO_LABELS_ROWS (MIMIC-IV demo 100 subjects). Raises if any subject is missing.
+    Uses a single prediction_time for all rows (max event time) so the labels file
+    is the source of truth for when predictions are made (MEDS-style).
     """
+    prediction_time = pd.Timestamp(df_events["time"].max())
     by_subject = {
         row[0]: {
             "readmission_risk": row[1],
@@ -250,9 +253,17 @@ def build_labels_table(df_events: pd.DataFrame) -> pd.DataFrame:
     for sid in subject_ids:
         r = by_subject[sid].copy()
         r["subject_id"] = sid
+        r["prediction_time"] = prediction_time
         rows.append(r)
     return pd.DataFrame(rows)[
-        ["subject_id", "readmission_risk", "phenotype_class", "overall_survival_months", "event_observed"]
+        [
+            "subject_id",
+            "prediction_time",
+            "readmission_risk",
+            "phenotype_class",
+            "overall_survival_months",
+            "event_observed",
+        ]
     ]
 
 

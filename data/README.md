@@ -5,7 +5,7 @@ This directory holds the MEDS events and labels used by the quickstart demo (`de
 ## Files
 
 - **mimic_iv_demo_meds_events.parquet** — MEDS event stream: `subject_id`, `time`, `code`, `table`, `value`. One row per clinical event (100 subjects total, from the MIMIC-IV demo).
-- **mimic_iv_demo_meds_labels.parquet** — One row per subject with **artificially generated** task labels (from the prep script; hardcoded in the prep script; generated once from model embeddings): `readmission_risk`, `phenotype_class`, `overall_survival_months`, `event_observed`. Used by the demo’s four task heads; labels are for demonstration only and have no clinical meaning.
+- **mimic_iv_demo_meds_labels.parquet** — One row per subject with **artificially generated** task labels (from the prep script; hardcoded in the prep script; generated once from model embeddings): `subject_id`, `prediction_time` (single as-of time for all, from events), `readmission_risk`, `phenotype_class`, `overall_survival_months`, `event_observed`. The demo uses `prediction_time` from this file to define the cutoff for embedding extraction (MEDS-style: labels file is source of truth). Used by the demo’s four task heads; labels are for demonstration only and have no clinical meaning.
 
 ## Source and license
 
