@@ -325,16 +325,21 @@ def run_downstream_tasks(X, df_labels):
     # Note: CoxPH is unstable on high-dim data with small N.
     # We project embeddings to 10 principal components (PCA) for stability.
     pca = PCA(n_components=10)
-    X_pca = pca.fit_transform(X_np)
+    X_pca_train = pca.fit_transform(X_np[train_idx])
+    X_pca_test = pca.transform(X_np[test_idx])
 
-    cox_df = pd.DataFrame(X_pca, columns=[f"PC{i}" for i in range(10)])
-    cox_df["T"] = df_labels["overall_survival_months"]
-    cox_df["E"] = df_labels["event_observed"]
+    cox_train = pd.DataFrame(X_pca_train, columns=[f"PC{i}" for i in range(10)])
+    cox_train["T"] = df_labels.loc[train_idx, "overall_survival_months"].values
+    cox_train["E"] = df_labels.loc[train_idx, "event_observed"].values
+
+    cox_test = pd.DataFrame(X_pca_test, columns=[f"PC{i}" for i in range(10)])
+    cox_test["T"] = df_labels.loc[test_idx, "overall_survival_months"].values
+    cox_test["E"] = df_labels.loc[test_idx, "event_observed"].values
 
     cph = CoxPHFitter()
-    cph.fit(cox_df.iloc[train_idx], duration_col="T", event_col="E")
+    cph.fit(cox_train, duration_col="T", event_col="E")
 
-    c_index = cph.score(cox_df.iloc[test_idx], scoring_method="concordance_index")
+    c_index = cph.score(cox_test, scoring_method="concordance_index")
     print(f"   -> C-Index: {c_index:.3f}")
 
     return {"auc": auc, "accuracy": acc, "mae": mae, "c_index": c_index}
