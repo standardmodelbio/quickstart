@@ -324,15 +324,15 @@ def run_downstream_tasks(X, df_labels):
     print("   -> Projecting embeddings to 10D PCA for stability...")
     # Note: CoxPH is unstable on high-dim data with small N.
     # We project embeddings to 10 principal components (PCA) for stability.
-    pca = PCA(n_components=10)
+    n_pca_components = 10
+    pca = PCA(n_components=n_pca_components)
     X_pca_train = pca.fit_transform(X_np[train_idx])
     X_pca_test = pca.transform(X_np[test_idx])
-
-    cox_train = pd.DataFrame(X_pca_train, columns=[f"PC{i}" for i in range(10)])
+    pc_cols = [f"PC{i}" for i in range(n_pca_components)]
+    cox_train = pd.DataFrame(X_pca_train, columns=pc_cols)
     cox_train["T"] = df_labels.loc[train_idx, "overall_survival_months"].values
     cox_train["E"] = df_labels.loc[train_idx, "event_observed"].values
-
-    cox_test = pd.DataFrame(X_pca_test, columns=[f"PC{i}" for i in range(10)])
+    cox_test = pd.DataFrame(X_pca_test, columns=pc_cols)
     cox_test["T"] = df_labels.loc[test_idx, "overall_survival_months"].values
     cox_test["E"] = df_labels.loc[test_idx, "event_observed"].values
 
