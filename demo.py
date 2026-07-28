@@ -20,7 +20,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 # Demo data: MIMIC-IV Clinical Database Demo in MEDS format (PhysioNet, ODbL).
 # See https://physionet.org/content/mimic-iv-demo-meds/ and data/README.md.
 
-MODEL_ID = "standardmodelbio/smb-v1-1.7b"
+MODEL_ID = "standardmodelbio/SMB-v1_Qwen3-1.7b_multi-objective"
 # Short name for console (repo id after last /)
 MODEL_SHORT_NAME = MODEL_ID.split("/")[-1]
 
